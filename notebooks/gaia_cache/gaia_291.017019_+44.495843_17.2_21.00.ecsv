@@ -1,0 +1,49 @@
+# %ECSV 1.0
+# ---
+# datatype:
+# - name: source_id
+#   datatype: int64
+#   description: Unique source identifier (unique within a particular Data Release)
+#   meta: !!omap
+#   - {ucd: meta.id}
+# - name: ra
+#   unit: deg
+#   datatype: float64
+#   description: Right ascension
+#   meta: !!omap
+#   - {ucd: pos.eq.ra;meta.main}
+#   - {utype: 'stc:AstroCoords.Position3D.Value3.C1'}
+# - name: dec
+#   unit: deg
+#   datatype: float64
+#   description: Declination
+#   meta: !!omap
+#   - {ucd: pos.eq.dec;meta.main}
+#   - {utype: 'stc:AstroCoords.Position3D.Value3.C2'}
+# - name: phot_g_mean_mag
+#   unit: mag
+#   datatype: float32
+#   description: G-band mean magnitude
+#   meta: !!omap
+#   - {ucd: phot.mag;em.opt}
+# - name: phot_bp_mean_mag
+#   unit: mag
+#   datatype: float32
+#   description: Integrated BP mean magnitude
+#   meta: !!omap
+#   - {ucd: phot.mag;em.opt.B}
+# - name: phot_rp_mean_mag
+#   unit: mag
+#   datatype: float32
+#   description: Integrated RP mean magnitude
+#   meta: !!omap
+#   - {ucd: phot.mag;em.opt.R}
+# schema: astropy-2.0
+source_id ra dec phot_g_mean_mag phot_bp_mean_mag phot_rp_mean_mag
+2126245584480594432 291.01765804648454 44.493791125062245 19.900595 21.206516 18.84191
+2126245794937637632 291.01408663507874 44.4978801095047 18.886478 19.299976 18.357029
+2126245687559826048 291.02327197511016 44.49729688452118 18.237642 18.737148 17.609856
+2126245584477751168 291.0218141943379 44.49254029274426 20.22042 21.373112 19.00277
+2126245588779207936 291.0170189106795 44.495842626555834 18.262655 18.628824 17.74546
+2126245790639029504 291.0104300591018 44.49512296717736 19.576889 19.926746 19.043058
+2126245691858425728 291.0211043559742 44.4969746878879 16.742466 17.188572 16.14136
