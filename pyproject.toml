@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wcc-sim"
+version = "0.1.0"
+description = "End-to-end photometric image simulator for the Lazuli Wide-field Context Camera (WCC)"
+requires-python = ">=3.11"
+# NOTE: wcc_etc (>=0.6.0) is also required but is not on PyPI —
+# install it editable first: pip install -e <path-to-wcc-etc>
+dependencies = [
+    "numpy",
+    "scipy",
+    "astropy",
+    "astroquery",
+    "synphot",
+]
+
+[project.scripts]
+wcc-sim = "wcc_sim.cli:main"
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+wcc_sim = ["data/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
