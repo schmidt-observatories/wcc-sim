@@ -30,7 +30,7 @@ def gaia_g_bandpass():
         points=wave * u.AA,
         lookup_table=trans,
         keep_neg=False,
-        fill_value=0,
+        fill_value=0,  # Without this, synphot extrapolates edge values outside tabulated range.
     )
 
 
@@ -45,7 +45,9 @@ def _spt_table():
 def spt_from_bp_rp(bp_rp):
     """Nearest-neighbor Pickles dwarf type for BP-RP; NaN -> 'G2V'."""
     spts, colors = _spt_table()
-    bp_rp = np.atleast_1d(np.asarray(bp_rp, dtype=float))
+    bp_rp = np.atleast_1d(
+        np.ma.filled(np.ma.masked_invalid(bp_rp), np.nan).astype(float)
+    )
     out = np.full(bp_rp.shape, "G2V", dtype=object)
     ok = np.isfinite(bp_rp)
     idx = np.abs(bp_rp[ok, None] - colors[None, :]).argmin(axis=1)

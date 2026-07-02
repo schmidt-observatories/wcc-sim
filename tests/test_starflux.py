@@ -25,6 +25,15 @@ def test_spt_from_bp_rp_nearest_and_nan():
     assert spts[3] == "G2V"  # missing color falls back to G2V
 
 
+def test_spt_from_bp_rp_masked_column():
+    from astropy.table import MaskedColumn
+
+    from wcc_sim.starflux import spt_from_bp_rp
+
+    col = MaskedColumn([0.82, 2.7], mask=[False, True])
+    assert list(spt_from_bp_rp(col)) == ["G2V", "G2V"]
+
+
 def test_rate_scales_exactly_with_magnitude():
     from wcc_sim.starflux import REF_MAG, rate_for_spt, rates_for_catalog
 
