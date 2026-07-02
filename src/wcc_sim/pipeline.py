@@ -174,13 +174,5 @@ def simulate_field(
         params=params,
     )
     if output is not None:
-        write_fits(
-            output,
-            result.image_adu,
-            result.saturation_mask,
-            result.catalog,
-            wcs,
-            params,
-            image_clean=result.image_clean if write_clean else None,
-        )
+        result.write(output, write_clean=write_clean)
     return result

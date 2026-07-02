@@ -48,6 +48,7 @@ def test_photometric_closure_vs_etc(canned_catalog):
     star_e = (f.image_clean - sky_dark).sum()
     spt = f.catalog["spt"][0]
     expected = rate_for_spt(spt, "zwo:r") * 90.0
+    assert expected > 0  # guard: a zero rate would make the closure check vacuous
     assert star_e == pytest.approx(expected, rel=0.01)
 
 
