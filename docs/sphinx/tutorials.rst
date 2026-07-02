@@ -32,6 +32,10 @@ run offline.
    * - :doc:`notebooks/06_cli_and_fits`
      - The ``wcc-sim`` command line and the multi-extension FITS output,
        read back with astropy.
+   * - :doc:`notebooks/07_psf_wings`
+     - The analytic PSF wing extension: before/after images at hard
+       stretch, the fitted power-law wing models, seam smoothness at the
+       old stamp edge, and how the wings change the encircled energy.
 
 .. toctree::
    :maxdepth: 1
@@ -43,3 +47,4 @@ run offline.
    notebooks/04_noise_and_saturation
    notebooks/05_astrometry_and_catalogs
    notebooks/06_cli_and_fits
+   notebooks/07_psf_wings
