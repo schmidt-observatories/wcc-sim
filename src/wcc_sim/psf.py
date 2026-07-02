@@ -10,7 +10,9 @@ from wcc_etc import DEFOCUS_1WAVE_PATH, DEFOCUS_2WAVE_PATH, AiryPSF, DefocusPSF
 from wcc_etc.psfsim import DetectorPSFContext
 
 # Detector-pixel stamp sizes (odd). Defocus Huygens data spans ~272 IMX px.
-DEFAULT_STAMP = {0: 65, 1: 257, 2: 257}
+# The in-focus Airy PSF needs ~129 px to hold >=99.5% of the (jitter-blurred)
+# energy; a 65 px stamp truncates ~1.3% of the wing energy.
+DEFAULT_STAMP = {0: 129, 1: 257, 2: 257}
 
 
 def make_psf_source(focus):

@@ -48,7 +48,7 @@ def test_stamp_captures_energy(base_sim):
         render_oversampled_psf(base_sim, 0, os_, DEFAULT_STAMP[0]), os_
     )
     p_big = bin_os(
-        render_oversampled_psf(base_sim, 0, os_, DEFAULT_STAMP[0] + 32), os_
+        render_oversampled_psf(base_sim, 0, os_, DEFAULT_STAMP[0] + 192), os_
     )
     assert p_small.max() / p_big.max() == pytest.approx(1.0, abs=5e-3)
 
@@ -72,3 +72,10 @@ def test_bad_focus_raises(base_sim):
 
     with pytest.raises(ValueError, match="focus"):
         render_oversampled_psf(base_sim, focus=3)
+
+
+def test_even_stamp_npix_raises(base_sim):
+    from wcc_sim.psf import render_oversampled_psf
+
+    with pytest.raises(ValueError, match="odd"):
+        render_oversampled_psf(base_sim, focus=0, stamp_npix=64)
