@@ -62,7 +62,14 @@ def make_star_simulation(spt, sensorfilter, mag=REF_MAG):
 
 
 def rate_for_spt(spt, sensorfilter):
-    """Total point-source rate (e-/s) at G = REF_MAG, memoized."""
+    """Total point-source rate (e-/s) at G = REF_MAG, memoized.
+
+    `spt` is coerced to a plain `str`: wcc_etc.scene dispatches on an exact
+    `type(x) is str` check, so a `numpy.str_` (as produced by indexing the
+    array `spt_from_bp_rp` returns) silently falls through to a spectrum-less
+    scene and a rate of 0.0 instead of raising.
+    """
+    spt = str(spt)
     key = (spt, sensorfilter)
     if key not in _RATE_CACHE:
         sim = make_star_simulation(spt, sensorfilter)
