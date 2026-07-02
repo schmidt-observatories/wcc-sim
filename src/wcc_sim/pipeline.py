@@ -11,7 +11,7 @@ from .catalog import query_gaia
 from .detectors import get_geometry, make_base_simulation
 from .fitswriter import build_hdulist, write_fits
 from .psf import DEFAULT_STAMP, render_oversampled_psf
-from .render import add_noise_and_digitize, render_scene
+from .render import add_noise_and_digitize, render_scene, star_saturated
 from .starflux import rates_for_catalog, sky_and_dark_rates
 from .wcsutil import build_wcs
 
@@ -129,9 +129,9 @@ def simulate_field(
     catalog["in_image"] = np.asarray(in_image, dtype=bool)
     saturated = np.zeros(len(catalog), dtype=bool)
     for i in np.flatnonzero(np.asarray(in_image, dtype=bool)):
-        saturated[i] = out["satmask"][
-            int(round(catalog["y"][i])), int(round(catalog["x"][i]))
-        ]
+        saturated[i] = star_saturated(
+            out["satmask"], catalog["x"][i], catalog["y"][i]
+        )
     catalog["saturated"] = saturated
 
     sky, dark = sky_and_dark_rates(sim)

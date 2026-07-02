@@ -68,3 +68,16 @@ def test_sky_and_dark_rates_positive():
     sky, dark = sky_and_dark_rates(make_base_simulation(SENSORFILTER))
     assert sky > 0
     assert dark > 0
+
+
+def test_rate_reference_pin():
+    """Regression pin for the full Gaia-G -> Pickles -> throughput chain.
+
+    Guards against silent changes to the flux normalization (bandpass
+    units, magsys, Vega zero point). If wcc_etc throughput data is
+    deliberately updated, re-record this value with:
+    python -c "from wcc_sim.starflux import rate_for_spt; print(rate_for_spt('G2V', 'zwo:r'))"
+    """
+    from wcc_sim.starflux import rate_for_spt
+
+    assert rate_for_spt("G2V", "zwo:r") == pytest.approx(38484.388331215, rel=1e-3)

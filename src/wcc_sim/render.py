@@ -50,12 +50,31 @@ def render_scene(shape, xs, ys, fluxes_e, psf_os, oversample):
     return image
 
 
+def star_saturated(satmask, x, y, radius=16):
+    """True if any saturated pixel lies within `radius` px of (x, y).
+
+    A window is used rather than the central pixel alone because the
+    defocused PSFs are centrally depressed: a bright star can saturate
+    its ring while its central pixel stays below full well.
+    """
+    ny, nx = satmask.shape
+    x0, y0 = int(round(x)), int(round(y))
+    y_lo, y_hi = max(y0 - radius, 0), min(y0 + radius + 1, ny)
+    x_lo, x_hi = max(x0 - radius, 0), min(x0 + radius + 1, nx)
+    if y_lo >= y_hi or x_lo >= x_hi:
+        return False
+    return bool(satmask[y_lo:y_hi, x_lo:x_hi].any())
+
+
 def add_noise_and_digitize(image_sources_e, sim, exptime, n_reads, rng, add_noise=True):
     """Apply sky+dark, per-frame saturation, Poisson + read noise, ADU conversion.
 
     ETC semantics (wcc_etc.simulation): read-noise variance scales with
     n_reads; saturation is evaluated on the per-frame expectation.
     """
+    n_reads = int(n_reads)
+    if n_reads < 1:
+        raise ValueError(f"n_reads must be >= 1, got {n_reads}")
     sensor = sim.sensor
     gain = float(sensor.gain.to(u.electron / u.ct).value)
     read_noise = float(sensor.read_noise.value)

@@ -1,4 +1,3 @@
-import numpy as np
 from astropy.io import fits
 
 from tests.conftest import DEC0, RA0
