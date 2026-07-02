@@ -112,12 +112,12 @@ def test_no_noise_mode(base_sim):
 def test_star_saturated_window():
     from wcc_sim.render import star_saturated
 
-    mask = np.zeros((64, 64), dtype=bool)
-    assert not star_saturated(mask, 32.0, 32.0)
-    mask[37, 32] = True  # ring pixel 5 px from center, center itself unsaturated
-    assert star_saturated(mask, 32.0, 32.0)
-    assert not star_saturated(mask, 32.0, 60.0)  # 23 px away, outside radius
-    assert not star_saturated(mask, -500.0, 32.0)  # fully off-array window
+    mask = np.zeros((128, 128), dtype=bool)
+    assert not star_saturated(mask, 64.0, 64.0)
+    mask[86, 64] = True  # ring pixel 22 px from center (2-wave defocus ring)
+    assert star_saturated(mask, 64.0, 64.0)
+    assert not star_saturated(mask, 64.0, 20.0)  # 44 px away, outside radius
+    assert not star_saturated(mask, -500.0, 64.0)  # fully off-array window
 
 
 def test_invalid_n_reads_raises(base_sim):

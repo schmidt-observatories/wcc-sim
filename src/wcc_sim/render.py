@@ -50,12 +50,13 @@ def render_scene(shape, xs, ys, fluxes_e, psf_os, oversample):
     return image
 
 
-def star_saturated(satmask, x, y, radius=16):
+def star_saturated(satmask, x, y, radius=32):
     """True if any saturated pixel lies within `radius` px of (x, y).
 
     A window is used rather than the central pixel alone because the
     defocused PSFs are centrally depressed: a bright star can saturate
-    its ring while its central pixel stays below full well.
+    its ring while its central pixel stays below full well. The 2-wave
+    defocus PSF's bright ring extends to ~29 px from center.
     """
     ny, nx = satmask.shape
     x0, y0 = int(round(x)), int(round(y))
