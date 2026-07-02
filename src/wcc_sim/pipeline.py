@@ -11,9 +11,15 @@ from .catalog import query_gaia
 from .detectors import get_geometry, make_base_simulation
 from .fitswriter import build_hdulist, write_fits
 from .psf import DEFAULT_STAMP, render_oversampled_psf
-from .render import add_noise_and_digitize, render_scene, star_saturated
+from .render import (
+    add_noise_and_digitize,
+    bin_oversampled,
+    render_scene,
+    star_saturated,
+)
 from .starflux import rates_for_catalog, sky_and_dark_rates
 from .wcsutil import build_wcs
+from .wings import fit_wing_model
 
 
 @dataclass
@@ -57,6 +63,7 @@ def simulate_field(
     shape=None,
     stamp_npix=None,
     oversample=11,
+    wings=True,
     cache_dir=None,
     write_clean=True,
 ):
@@ -64,7 +71,10 @@ def simulate_field(
 
     Parameters mirror the design spec; `shape=(ny, nx)` overrides the full
     array (useful for quick looks and tests), `catalog=` bypasses the Gaia
-    query with a pre-made Table.
+    query with a pre-made Table. `wings=True` (default) extends bright-star
+    PSFs beyond the finite stamp with an analytic power-law wing (see
+    wcc_sim.wings) so truncation stays below 0.1 sigma of the background
+    noise instead of printing square "postage stamp" edges.
     """
     sim = make_base_simulation(sensorfilter)
     geom = get_geometry(sensorfilter, sim=sim)
@@ -109,7 +119,21 @@ def simulate_field(
         jitter_sigma_mas=jitter_sigma_mas,
     )
 
-    image_sources = render_scene(shape, xs, ys, rates * exptime, psf_os, oversample)
+    sky, dark = sky_and_dark_rates(sim)
+    wing = None
+    wing_floor_e = None
+    if wings:
+        wing = fit_wing_model(bin_oversampled(psf_os, oversample))
+        read_noise = float(sim.sensor.read_noise.value)
+        sigma_floor = np.sqrt(
+            (sky + dark) * exptime + max(int(n_reads), 1) * read_noise**2
+        )
+        wing_floor_e = 0.1 * sigma_floor
+
+    image_sources = render_scene(
+        shape, xs, ys, rates * exptime, psf_os, oversample,
+        wing=wing, floor_e=wing_floor_e,
+    )
 
     rng = np.random.default_rng(seed)
     out = add_noise_and_digitize(
@@ -134,7 +158,6 @@ def simulate_field(
         )
     catalog["saturated"] = saturated
 
-    sky, dark = sky_and_dark_rates(sim)
     params = {
         "ra": float(ra),
         "dec": float(dec),
@@ -157,6 +180,12 @@ def simulate_field(
         "read_noise": float(sim.sensor.read_noise.value),
         "dark_e_s": dark,
         "sky_e_s": sky,
+        "wings": bool(wings),
+        "wing_alpha": float(wing.alpha) if wing is not None else None,
+        "wing_c": float(wing.c) if wing is not None else None,
+        "wing_floor_e": (
+            float(wing_floor_e) if wing_floor_e is not None else None
+        ),
         "well_depth": (
             float(sim.sensor.meta["well_depth"])
             if sim.sensor.meta.get("well_depth") is not None

@@ -30,6 +30,10 @@ _CARDS = {
     "dark_e_s": ("DARK", "[e-/s/pix] dark current"),
     "sky_e_s": ("SKYRATE", "[e-/s/pix] sky background rate"),
     "well_depth": ("WELLDEP", "[e-] full well (empty if None)"),
+    "wings": ("WINGS", "analytic PSF wing extension applied"),
+    "wing_alpha": ("WINGA", "wing power-law slope (empty if wings off)"),
+    "wing_c": ("WINGC", "wing amplitude [frac/pix at r=1px]"),
+    "wing_floor_e": ("WINGFLR", "[e-/pix] wing truncation floor"),
 }
 
 

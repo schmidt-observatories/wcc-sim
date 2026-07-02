@@ -29,4 +29,26 @@ def test_cli_writes_fits(monkeypatch, tmp_path, canned_catalog):
     assert rc == 0
     with fits.open(out) as hdul:
         assert hdul["SCI"].header["EXPTIME"] == 60.0
+        assert hdul["SCI"].header["WINGS"] is True
+        assert hdul["SCI"].header["WINGA"] < -2.0
         assert len(hdul["CAT"].data) == 5
+
+
+def test_cli_no_wings_flag(monkeypatch, tmp_path, canned_catalog):
+    from wcc_sim import cli, pipeline
+
+    monkeypatch.setattr(pipeline, "query_gaia", lambda *a, **k: canned_catalog)
+    out = tmp_path / "cli_nowings.fits"
+    rc = cli.main(
+        [
+            "--ra", str(RA0), "--dec", str(DEC0),
+            "--sensorfilter", "zwo:r", "--focus", "0",
+            "--exptime", "60", "--seed", "3",
+            "--shape", "256", "256", "--stamp-npix", "33",
+            "--no-wings",
+            "-o", str(out),
+        ]
+    )
+    assert rc == 0
+    with fits.open(out) as hdul:
+        assert hdul["SCI"].header["WINGS"] is False

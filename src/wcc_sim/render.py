@@ -16,11 +16,60 @@ def bin_oversampled(stamp_os, oversample):
     )
 
 
-def add_star(image, psf_os, x, y, flux_e, oversample):
+def wing_blend(n_stamp, wing, blend_start=0.8):
+    """Precompute the stamp->wing crossfade for one stamp geometry.
+
+    Returns (w, model): w is a cosine taper (1 in the core, 0 at r >=
+    half-width) and model is the wing profile on the stamp grid. Blending
+    the stamp's outer annulus into the smooth model removes the Airy-ring
+    texture that would otherwise end abruptly at the square stamp edge.
+    """
+    half = n_stamp // 2
+    yy, xx = np.mgrid[:n_stamp, :n_stamp]
+    r = np.hypot(yy - half, xx - half)
+    t = np.clip((r - blend_start * half) / ((1.0 - blend_start) * half), 0.0, 1.0)
+    w = 0.5 * (1.0 + np.cos(np.pi * t))
+    model = wing.profile(np.maximum(r, 1.0))
+    return w, model
+
+
+def _add_wing_halo(image, x0, y0, half, scaled_flux, wing, floor_e):
+    """Add flux*profile(r) outside the square stamp footprint, in row chunks."""
+    ny, nx = image.shape
+    r_out = wing.r_out(scaled_flux, floor_e)
+    if r_out <= half:
+        return
+    r_out_i = int(np.ceil(r_out))
+    by_lo, by_hi = max(y0 - r_out_i, 0), min(y0 + r_out_i + 1, ny)
+    bx_lo, bx_hi = max(x0 - r_out_i, 0), min(x0 + r_out_i + 1, nx)
+    if by_lo >= by_hi or bx_lo >= bx_hi:
+        return
+    xx = np.arange(bx_lo, bx_hi, dtype=float)[None, :] - x0
+    for cy_lo in range(by_lo, by_hi, 1024):
+        cy_hi = min(cy_lo + 1024, by_hi)
+        yy = np.arange(cy_lo, cy_hi, dtype=float)[:, None] - y0
+        rr = np.hypot(yy, xx)
+        m = (rr <= r_out) & ((np.abs(yy) > half) | (np.abs(xx) > half))
+        if not m.any():
+            continue
+        halo = np.zeros(rr.shape, dtype=np.float32)
+        halo[m] = scaled_flux * wing.profile(rr[m])
+        image[cy_lo:cy_hi, bx_lo:bx_hi] += halo
+
+
+def add_star(image, psf_os, x, y, flux_e, oversample, wing=None, floor_e=None,
+             blend=None):
     """Add one star at float pixel (x, y), sub-pixel placed, edge-clipped.
 
     Sub-pixel shift is a fine-grid np.roll (error <= 1/(2*oversample) px);
     rolled wrap-around energy is negligible because stamp edges are ~0.
+
+    With a `wing` model (see wcc_sim.wings), the stamp's outer annulus is
+    crossfaded into the smooth wing profile and the halo is continued on a
+    circular footprint out to where flux_e * profile(r) < floor_e. Star flux
+    is renormalized by 1/(1 + wing energy beyond the stamp) for all stars so
+    photometry stays magnitude-independent; the sub-floor halo of faint
+    stars is simply not drawn.
     """
     ny, nx = image.shape
     n_stamp = psf_os.shape[0] // oversample
@@ -31,7 +80,14 @@ def add_star(image, psf_os, x, y, flux_e, oversample):
     sx = int(round((x - x0) * oversample))
     sy = int(round((y - y0) * oversample))
     stamp = bin_oversampled(np.roll(psf_os, (sy, sx), axis=(0, 1)), oversample)
-    stamp = stamp * flux_e
+    if wing is not None:
+        if blend is None:
+            blend = wing_blend(n_stamp, wing)
+        w, model = blend
+        flux_e = flux_e / (1.0 + wing.energy_beyond(float(half)))
+        stamp = flux_e * (stamp * w + model * (1.0 - w))
+    else:
+        stamp = stamp * flux_e
 
     y_lo, y_hi = y0 - half, y0 + half + 1
     x_lo, x_hi = x0 - half, x0 + half + 1
@@ -41,12 +97,20 @@ def add_star(image, psf_os, x, y, flux_e, oversample):
         iy_lo - y_lo : iy_hi - y_lo, ix_lo - x_lo : ix_hi - x_lo
     ]
 
+    if wing is not None and floor_e is not None:
+        _add_wing_halo(image, x0, y0, half, flux_e, wing, floor_e)
 
-def render_scene(shape, xs, ys, fluxes_e, psf_os, oversample):
+
+def render_scene(shape, xs, ys, fluxes_e, psf_os, oversample, wing=None,
+                 floor_e=None):
     """Sum of PSF stamps (e-) for all stars on a float32 (ny, nx) grid."""
     image = np.zeros(shape, dtype=np.float32)
+    blend = None
+    if wing is not None:
+        blend = wing_blend(psf_os.shape[0] // oversample, wing)
     for x, y, f in zip(np.atleast_1d(xs), np.atleast_1d(ys), np.atleast_1d(fluxes_e)):
-        add_star(image, psf_os, float(x), float(y), float(f), oversample)
+        add_star(image, psf_os, float(x), float(y), float(f), oversample,
+                 wing=wing, floor_e=floor_e, blend=blend)
     return image
 
 

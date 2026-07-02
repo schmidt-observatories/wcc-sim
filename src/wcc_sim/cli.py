@@ -29,6 +29,8 @@ def build_parser():
                    help="subarray shape (default: full array)")
     p.add_argument("--stamp-npix", type=int, default=None,
                    help="PSF stamp size [detector px, odd]")
+    p.add_argument("--no-wings", action="store_true",
+                   help="skip the analytic PSF wing extension beyond the stamp")
     p.add_argument("--cache-dir", default=None, help="Gaia query cache directory")
     p.add_argument("-o", "--output", required=True, help="output FITS path")
     return p
@@ -51,6 +53,7 @@ def main(argv=None):
         output=args.output,
         shape=tuple(args.shape) if args.shape else None,
         stamp_npix=args.stamp_npix,
+        wings=not args.no_wings,
         cache_dir=args.cache_dir,
         write_clean=not args.no_clean,
     )

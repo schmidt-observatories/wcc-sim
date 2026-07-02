@@ -27,6 +27,7 @@ Modules
    catalog
    starflux
    psf
+   wings
    render
    detectors
    wcsutil
