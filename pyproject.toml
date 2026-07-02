@@ -22,6 +22,13 @@ wcc-sim = "wcc_sim.cli:main"
 
 [project.optional-dependencies]
 test = ["pytest"]
+docs = [
+    "sphinx",
+    "sphinx-rtd-theme",
+    "nbsphinx",
+    "myst-parser",
+    "ipykernel",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

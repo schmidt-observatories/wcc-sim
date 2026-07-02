@@ -1,0 +1,60 @@
+From Gaia photometry to count rates
+===================================
+
+The ``starflux`` module converts each Gaia star into a detector count rate
+through the ``wcc_etc`` instrument model. The chain, per star:
+
+1. **BP−RP → spectral type.** The star's Gaia BP−RP color is matched to the
+   nearest Pickles *dwarf* template color
+   (:func:`~wcc_sim.starflux.spt_from_bp_rp`, table in
+   ``wcc_sim/data/bp_rp_to_spt.csv``). Stars with missing/NaN colors fall
+   back to G2V.
+2. **Normalize in Gaia G.** That Pickles spectrum is normalized to the
+   star's ``phot_g_mean_mag`` (Vega system) in the Gaia DR3 G bandpass
+   (SVO filter service ``GAIA/GAIA3.G``, shipped as
+   ``wcc_sim/data/gaia_dr3_g.dat``).
+3. **Integrate through the instrument.** The normalized spectrum is pushed
+   through the full ``wcc_etc`` throughput (telescope + filter + detector QE)
+   to a total point-source rate in e-/s
+   (:func:`~wcc_sim.starflux.rate_for_spt`).
+
+Memoization
+-----------
+
+Computing a synphot integration per star would be prohibitively slow for a
+full array with tens of thousands of stars. Instead the rate is computed
+**once per (spectral type, sensorfilter) pair** at a reference magnitude
+G = 15 and scaled analytically:
+
+.. math::
+
+   \mathrm{rate}(G) = \mathrm{rate}(G{=}15) \times 10^{-0.4\,(G - 15)}
+
+This is exact for a fixed spectral shape, and reduces the synphot work from
+~50 000 integrations to at most ~45 (one per Pickles dwarf type).
+
+.. note::
+
+   The reference pin used by the test suite:
+   ``rate_for_spt("G2V", "zwo:r")`` ≈ **38 484 e-/s** at G = 15. If the
+   ``wcc_etc`` throughput model changes, ``test_rate_reference_pin``
+   explains how to re-record it.
+
+Sky and dark
+------------
+
+:func:`~wcc_sim.starflux.sky_and_dark_rates` extracts the per-pixel zodiacal
+sky background and dark-current rates from the same base simulation; both are
+added uniformly to the image in the noise stage (:doc:`noise`), and both are
+recorded in ``field.params`` and the FITS header (``SKYRATE``, ``DARK``).
+
+Practical notes
+---------------
+
+- Rates assume Pickles **dwarf** spectra; giants of the same color are
+  slightly off in the band-shape correction, which is acceptable for a
+  context camera simulation.
+- The per-(type, filter) cache lives for the Python session
+  (module-level dict); the first star of each type pays the synphot cost.
+- ``spt`` values in the output catalog let you audit exactly which template
+  each star received.

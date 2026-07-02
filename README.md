@@ -34,3 +34,16 @@ Detectors: `zwo:*` = Sony IMX455, 9568x6380 px, 16.87 mas/pix;
 ## Tests
 
     ~/anaconda3/envs/py313/bin/python -m pytest
+
+## Documentation
+
+Sphinx docs (user guide, tutorial notebooks, CLI reference, API) live in
+`docs/sphinx/`. Build with the same env (needs `pip install -e ".[docs]"`
+once, plus a `pandoc` binary):
+
+    cd docs/sphinx && make html
+    open _build/html/index.html
+
+Tutorial notebooks are in `notebooks/` (executed outputs included; the Gaia
+queries they need are cached in `notebooks/gaia_cache/`, so they run offline).
+Ready-to-run CLI examples are in `scripts/example_*.sh`.

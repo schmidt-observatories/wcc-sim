@@ -1,0 +1,11 @@
+# Documentation build dependencies (also declared in pyproject.toml under
+# [project.optional-dependencies] docs). Install with:
+#   pip install -e ".[docs]"
+#
+# Note: nbsphinx also requires a pandoc binary on the build machine.
+#   brew install pandoc  /  conda install pandoc  /  apt-get install pandoc
+sphinx
+sphinx-rtd-theme
+nbsphinx
+myst-parser
+ipykernel
