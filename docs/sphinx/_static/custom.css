@@ -1,0 +1,106 @@
+/* Schmidt Sciences (SSci) brand styling on top of the Read the Docs theme.
+ * Palette: ssci-design skill (purple #6B3FA0, violet #5E5FB6, blue #2E73B8,
+ * teal #1FB7C9, cyan #5AC9D6, light #F4F1F8, rule #D9D0E4, grey #555555). */
+
+:root {
+  --ssci-purple: #6B3FA0;
+  --ssci-violet: #5E5FB6;
+  --ssci-blue:   #2E73B8;
+  --ssci-teal:   #1FB7C9;
+  --ssci-cyan:   #5AC9D6;
+  --ssci-light:  #F4F1F8;
+  --ssci-rule:   #D9D0E4;
+  --ssci-grey:   #555555;
+  --ssci-font: Arial, "Helvetica Neue", Helvetica, sans-serif;
+}
+
+/* Arial everywhere — part of the SSci identity. */
+body,
+.wy-nav-content,
+.rst-content,
+h1, h2, h3, h4, h5, h6,
+.wy-menu-vertical,
+.wy-side-nav-search {
+  font-family: var(--ssci-font);
+}
+
+.wy-nav-content { max-width: 960px; color: var(--ssci-grey); }
+.rst-content table.docutils td,
+.rst-content table.docutils th { white-space: normal; }
+
+/* Sidebar header: white so the SSci logo (black text, teal-purple dots)
+ * sits on its own background. */
+.wy-side-nav-search {
+  background: #ffffff;
+  border-bottom: 1px solid var(--ssci-rule);
+}
+.wy-side-nav-search > a,
+.wy-side-nav-search > a:visited { color: var(--ssci-purple); }
+.wy-side-nav-search > div.version { color: var(--ssci-grey); }
+.wy-side-nav-search img.logo {
+  max-width: 90%;
+  padding: 0.5em 0 0.25em 0;
+  background: transparent;
+  border-radius: 0;
+}
+.wy-side-nav-search input[type="text"] {
+  border-color: var(--ssci-rule);
+  box-shadow: none;
+  border-radius: 3px;
+}
+
+/* Sidebar navigation: purple surface with cyan section captions. */
+.wy-nav-side { background: #3d2a56; }
+.wy-menu-vertical p.caption { color: var(--ssci-cyan); }
+.wy-menu-vertical a { color: #e8e2f0; }
+.wy-menu-vertical a:hover { background: var(--ssci-violet); color: #fff; }
+.wy-menu-vertical li.current > a,
+.wy-menu-vertical li.current a { border-right: none; }
+
+/* Mobile top bar. */
+.wy-nav-top { background: var(--ssci-purple); }
+.wy-nav-top a { color: #fff; }
+
+/* Headings: brand purple; h2 gets the thin under-rule. */
+.rst-content h1, .rst-content h2, .rst-content h3, .rst-content h4 {
+  color: var(--ssci-purple);
+}
+.rst-content h2 {
+  border-bottom: 1px solid var(--ssci-rule);
+  padding-bottom: 0.3em;
+}
+.rst-content h3 { color: var(--ssci-violet); }
+
+/* Links. */
+.rst-content a, a { color: var(--ssci-blue); }
+.rst-content a:hover, a:hover { color: var(--ssci-teal); }
+
+/* Admonitions: flat, teal accent for notes/tips. */
+.rst-content .note .admonition-title,
+.rst-content .tip .admonition-title,
+.rst-content .hint .admonition-title,
+.rst-content .seealso .admonition-title { background: var(--ssci-teal); }
+.rst-content .note,
+.rst-content .tip,
+.rst-content .hint,
+.rst-content .seealso { background: var(--ssci-light); }
+
+/* Tables: single purple header row, light rules. */
+.rst-content table.docutils thead th {
+  background: var(--ssci-purple);
+  color: #fff;
+  border-color: var(--ssci-purple);
+}
+.rst-content table.docutils td { border-color: var(--ssci-rule); }
+
+/* Breadcrumbs / version pill. */
+.rst-versions .rst-current-version { background: var(--ssci-purple); }
+
+/* API signatures: light tint with a purple left rule instead of the
+ * default blue. */
+html.writer-html5 .rst-content dl[class]:not(.option-list) > dt,
+.rst-content dl:not(.docutils) > dt {
+  background: var(--ssci-light);
+  border-top: 2px solid var(--ssci-violet);
+  color: var(--ssci-purple);
+}
