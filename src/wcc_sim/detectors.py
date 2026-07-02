@@ -15,6 +15,15 @@ ARRAY_DIMS = {
 FOCUS_WAVES = {"0wave": 0, "1wave": 1, "2wave": 2}
 
 
+def _validate_sensorfilter(sensorfilter):
+    """Validate that sensorfilter is known. Raises ValueError with valid keys."""
+    if sensorfilter not in _SENSORFILTER_FOCUS:
+        raise ValueError(
+            f"Unknown sensorfilter {sensorfilter!r}. "
+            f"Valid keys: {sorted(_SENSORFILTER_FOCUS)}"
+        )
+
+
 @dataclass(frozen=True)
 class DetectorGeometry:
     nx: int
@@ -30,15 +39,12 @@ def make_base_simulation(sensorfilter):
     Used for geometry, PSF context parameters, and sky/dark rates. Raises
     ValueError listing valid keys for an unknown sensorfilter.
     """
-    if sensorfilter not in _SENSORFILTER_FOCUS:
-        raise ValueError(
-            f"Unknown sensorfilter {sensorfilter!r}. "
-            f"Valid keys: {sorted(_SENSORFILTER_FOCUS)}"
-        )
+    _validate_sensorfilter(sensorfilter)
     return Simulation.from_sensorfilter(sensorfilter, get_scene("G2V", mag=15.0))
 
 
 def get_geometry(sensorfilter, sim=None):
+    _validate_sensorfilter(sensorfilter)
     if sim is None:
         sim = make_base_simulation(sensorfilter)
     kind = sensorfilter.split(":", 1)[0]

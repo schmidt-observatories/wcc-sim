@@ -31,3 +31,11 @@ def test_unknown_sensorfilter_lists_valid_keys():
 
     with pytest.raises(ValueError, match="zwo:r"):
         get_geometry("nope:x")
+
+
+def test_unknown_sensorfilter_with_explicit_sim():
+    from wcc_sim.detectors import get_geometry, make_base_simulation
+
+    sim = make_base_simulation("zwo:r")
+    with pytest.raises(ValueError, match="zwo:r"):
+        get_geometry("nope:x", sim=sim)
