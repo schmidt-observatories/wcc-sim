@@ -31,6 +31,17 @@ Detectors: `zwo:*` = Sony IMX455, 9568x6380 px, 16.87 mas/pix;
 `qcmos:*` = Hamamatsu HWK4123, 4096x2304 px, 20.64 mas/pix.
 `--focus 0|1|2` selects in-focus / +1 wave / +2 waves defocus PSFs.
 
+## Extended sources & chromatic PSFs
+
+`simulate_field` accepts `extended_sources=[SersicComponent(...)]` — analytic
+Sérsic components (galaxy disks/bulges) rendered in e-/s/pix at native
+resolution and FFT-convolved with the PSF — and `chromatic=True`, which
+replaces the single central-wavelength PSF with spectrum-weighted effective
+PSFs (per spectral type for stars, per component template for extended
+light; in-focus only — the defocus PSF has no wavelength model).
+Band-averaged F99 reddening is available via
+`wcc_sim.chromatic.attenuation_factor`.
+
 ## Photometry (wcc-phot)
 
 The sibling `wcc_phot` package extracts differential aperture or PSF
@@ -88,3 +99,7 @@ Ready-to-run CLI examples are in `scripts/example_*.sh`.
 `scripts/transit_trappist1b.py` is an end-to-end validation: it injects the
 TRAPPIST-1b transit (via `lazuli_transit`) into the Gaia catalog, simulates
 36 x 300 s defocused frames, runs `wcc_phot`, and checks the recovered depth.
+`scripts/cepheids_m101.py` is the extended-sources demo: synthetic Cepheids on
+the M101 disk (Sérsic galaxy light + real Gaia foreground, per-star reddening),
+recovered with `wcc-phot` PSF photometry into a period-luminosity relation and
+distance modulus.
