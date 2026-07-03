@@ -34,6 +34,8 @@ _CARDS = {
     "wing_alpha": ("WINGA", "wing power-law slope (empty if wings off)"),
     "wing_c": ("WINGC", "wing amplitude [frac/pix at r=1px]"),
     "wing_floor_e": ("WINGFLR", "[e-/pix] wing truncation floor"),
+    "chromatic": ("CHROMPSF", "spectrum-weighted effective PSFs used"),
+    "n_extended": ("NEXTSRC", "number of extended (Sersic) components"),
 }
 
 
