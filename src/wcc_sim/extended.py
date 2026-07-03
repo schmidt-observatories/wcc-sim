@@ -142,3 +142,37 @@ def render_component_profile(comp, wcs, shape, plate_scale_mas, sensorfilter):
             by_hi - by_lo, _REFINE, bx_hi - bx_lo, _REFINE
         ).mean(axis=(1, 3))
     return img
+
+
+def render_extended(components, wcs, shape, plate_scale_mas, sensorfilter,
+                    kernels, wing=None):
+    """PSF-convolved sum of all components, e-/s/pix on the native grid.
+
+    `kernels` maps (template, ebv) -> native-resolution PSF kernel; the
+    caller decides whether those are chromatic effective PSFs or copies of
+    the monochromatic one. Kernels are normalized to unit sum here and,
+    when a WingModel is given, scaled by 1/(1 + energy_beyond(half)) so
+    extended flux follows the same stamp-truncation convention as
+    add_star. No wing halo is drawn: for smooth extended light the halo
+    is a sub-noise redistribution.
+    """
+    image = np.zeros(shape, dtype=np.float32)
+    groups = {}
+    for comp in components:
+        groups.setdefault((comp.template, float(comp.ebv)), []).append(comp)
+    for key, comps in groups.items():
+        sub = None
+        for comp in comps:
+            prof = render_component_profile(
+                comp, wcs, shape, plate_scale_mas, sensorfilter
+            )
+            if prof is not None:
+                sub = prof if sub is None else sub + prof
+        if sub is None:
+            continue
+        kern = np.asarray(kernels[key], dtype=np.float64)
+        kern = kern / kern.sum()
+        if wing is not None:
+            kern = kern / (1.0 + wing.energy_beyond(kern.shape[0] // 2))
+        image += fftconvolve(sub, kern, mode="same").astype(np.float32)
+    return image

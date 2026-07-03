@@ -150,3 +150,69 @@ def test_far_off_frame_component_skipped():
         render_component_profile(comp, _wcs(), SHAPE, PLATE_MAS, "zwo:r")
         is None
     )
+
+
+def _mono_kernel(stamp_npix=33, oversample=3):
+    from wcc_sim.detectors import make_base_simulation
+    from wcc_sim.psf import render_oversampled_psf
+    from wcc_sim.render import bin_oversampled
+
+    sim = make_base_simulation("zwo:r")
+    psf = render_oversampled_psf(sim, 0, oversample=oversample,
+                                 stamp_npix=stamp_npix)
+    return bin_oversampled(psf, oversample)
+
+
+def test_render_extended_conserves_flux():
+    from wcc_sim.extended import render_extended, render_component_profile
+
+    comp = _comp(n=1.0, r_eff_arcsec=0.05, total_mag=18.0)
+    kern = _mono_kernel()
+    img = render_extended([comp], _wcs(), SHAPE, PLATE_MAS, "zwo:r",
+                          {(comp.template, comp.ebv): kern})
+    prof = render_component_profile(comp, _wcs(), SHAPE, PLATE_MAS, "zwo:r")
+    assert img.dtype == np.float32
+    # unit-sum kernel: convolution preserves flux (edge losses negligible
+    # for a compact centered component)
+    assert img.sum() == pytest.approx(prof.sum(), rel=0.005)
+    # convolution spreads the profile: peak must drop
+    assert img.max() < prof.max()
+
+
+def test_render_extended_groups_by_template_and_ebv():
+    from wcc_sim.extended import render_extended
+
+    c1 = _comp(n=1.0, r_eff_arcsec=0.1, total_mag=17.0, template="G2V")
+    c2 = _comp(n=1.0, r_eff_arcsec=0.2, total_mag=17.5, template="K0V")
+    kern = _mono_kernel()
+    kernels = {("G2V", 0.0): kern, ("K0V", 0.0): kern}
+    both = render_extended([c1, c2], _wcs(), SHAPE, PLATE_MAS, "zwo:r",
+                           kernels)
+    solo1 = render_extended([c1], _wcs(), SHAPE, PLATE_MAS, "zwo:r", kernels)
+    solo2 = render_extended([c2], _wcs(), SHAPE, PLATE_MAS, "zwo:r", kernels)
+    assert np.allclose(both, solo1 + solo2, atol=1e-4)
+
+
+def test_render_extended_wing_renormalization():
+    from wcc_sim.extended import render_extended
+    from wcc_sim.wings import WingModel
+
+    comp = _comp(n=1.0, r_eff_arcsec=0.05, total_mag=18.0)
+    kern = _mono_kernel()
+    kernels = {(comp.template, comp.ebv): kern}
+    wing = WingModel(c=0.01, alpha=-3.0, r_in=float(kern.shape[0] // 2))
+    plain = render_extended([comp], _wcs(), SHAPE, PLATE_MAS, "zwo:r",
+                            kernels)
+    winged = render_extended([comp], _wcs(), SHAPE, PLATE_MAS, "zwo:r",
+                             kernels, wing=wing)
+    factor = 1.0 + wing.energy_beyond(kern.shape[0] // 2)
+    assert winged.sum() == pytest.approx(plain.sum() / factor, rel=1e-4)
+
+
+def test_render_extended_all_off_frame():
+    from wcc_sim.extended import render_extended
+
+    comp = _comp(dec=DEC0 + 5.0)
+    img = render_extended([comp], _wcs(), SHAPE, PLATE_MAS, "zwo:r",
+                          {(comp.template, comp.ebv): _mono_kernel()})
+    assert img.sum() == 0.0
