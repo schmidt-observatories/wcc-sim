@@ -79,3 +79,36 @@ def test_even_stamp_npix_raises(base_sim):
 
     with pytest.raises(ValueError, match="odd"):
         render_oversampled_psf(base_sim, focus=0, stamp_npix=64)
+
+
+def _rms_radius(psf):
+    n = psf.shape[0]
+    c = n // 2
+    yy, xx = np.mgrid[:n, :n]
+    r2 = (yy - c) ** 2 + (xx - c) ** 2
+    return float(np.sqrt((psf * r2).sum() / psf.sum()))
+
+
+def test_explicit_wavelength_matches_default():
+    from wcc_sim.detectors import make_base_simulation
+    from wcc_sim.psf import render_oversampled_psf
+
+    sim = make_base_simulation("zwo:r")
+    a = render_oversampled_psf(sim, 0, oversample=3, stamp_npix=33)
+    b = render_oversampled_psf(
+        sim, 0, oversample=3, stamp_npix=33,
+        wavelength_m=float(sim.sensor.wavelength.to("m").value),
+    )
+    assert np.array_equal(a, b)
+
+
+def test_longer_wavelength_widens_airy():
+    from wcc_sim.detectors import make_base_simulation
+    from wcc_sim.psf import render_oversampled_psf
+
+    sim = make_base_simulation("zwo:r")
+    blue = render_oversampled_psf(sim, 0, oversample=3, stamp_npix=33,
+                                  wavelength_m=550e-9)
+    red = render_oversampled_psf(sim, 0, oversample=3, stamp_npix=33,
+                                 wavelength_m=900e-9)
+    assert _rms_radius(red) > _rms_radius(blue)
