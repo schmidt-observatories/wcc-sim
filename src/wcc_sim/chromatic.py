@@ -28,6 +28,7 @@ from .detectors import make_base_simulation
 from .psf import DEFAULT_STAMP, render_oversampled_psf
 
 _N_WAVE = 4096  # fine-grid points for band integrals
+_trapezoid = getattr(np, "trapezoid", None) or np.trapz  # numpy<2 has no trapezoid
 _EFF_PSF_CACHE = {}
 
 
@@ -139,4 +140,4 @@ def attenuation_factor(template, ebv, sensorfilter, rv=3.1):
     spectrum = get_scene_element(str(template), mag=15.0).spectrum
     wave_aa, st = _weighted_flux(sim, spectrum)
     trans = F99(Rv=rv).extinguish(wave_aa * u.AA, Ebv=ebv)
-    return float(np.trapz(st * trans, wave_aa) / np.trapz(st, wave_aa))
+    return float(_trapezoid(st * trans, wave_aa) / _trapezoid(st, wave_aa))
