@@ -10,7 +10,7 @@ from . import __version__ as wcc_phot_version
 from .apphot import aperture_photometry_frame
 from .centroid import centroid_stars
 from .geometry import default_geometry, geometry_from_r_ap, render_model_psf
-from .io import load_frame
+from .io import frame_meta, load_frame
 from .lightcurve import build_lightcurve
 from .psfphot import build_psf_model, psf_photometry_frame
 from .select import pick_references, pick_target
@@ -78,6 +78,7 @@ def run_photometry(
     times=None,
     output=None,
     on_frame=None,
+    report=None,
 ):
     """Aperture or PSF photometry of a target + best n_ref reference stars.
 
@@ -91,27 +92,39 @@ def run_photometry(
     wcc_phot.live.LiveViewer) is called after each frame is measured with
     an event dict (frame, n_frames, time, image_e, wcs, x, y, roles,
     geom, flux_e, flux_err_e, flags, rel_flux, rel_flux_err) for live
-    display or custom hooks. Returns a PhotometryResult (optionally also
-    written to `output` as a STARS/PHOT/LC FITS).
+    display or custom hooks; the dict holds that frame's full-resolution
+    image, so a callback that *retains* it (rather than consuming it in
+    place) pins every frame in memory and defeats the streaming above.
+    `report` (optional path) writes the one-page
+    PDF + PNG diagnostic report (wcc_phot.report.make_report) with the
+    first frame in the field panel. Returns a PhotometryResult (optionally
+    also written to `output` as a STARS/PHOT/LC FITS).
     """
     if method not in ("aperture", "psf"):
         raise ValueError(f"method must be 'aperture' or 'psf', got {method!r}")
-    frame_list = [load_frame(f) for f in frames]
-    if not frame_list:
+    frames = list(frames)
+    if not frames:
         raise ValueError("no frames given")
-    meta0 = frame_list[0].meta
-    for fr in frame_list[1:]:
-        if (
-            fr.meta["sensorfilter"] != meta0["sensorfilter"]
-            or fr.meta["focus"] != meta0["focus"]
-        ):
+    n_frames = len(frames)
+    # Stream frames one at a time to bound run_photometry's own memory: it
+    # only ever holds the first frame (kept for setup and the report panel)
+    # and the frame currently being measured. (A caller's on_frame callback
+    # that *retains* the event dict pins those frames' images and defeats
+    # this — see on_frame below.)
+    frame0 = load_frame(frames[0])
+    meta0 = frame0.meta
+    # Fail fast on mixed sensorfilter/focus before any measurement, reading
+    # only headers (not images) so the check stays memory-bounded too.
+    for f in frames[1:]:
+        m = frame_meta(f)
+        if m["sensorfilter"] != meta0["sensorfilter"] or m["focus"] != meta0["focus"]:
             raise ValueError(
                 "frames mix sensorfilters/focus levels; run them separately"
             )
     if times is None:
-        times = np.arange(len(frame_list), dtype=float)
+        times = np.arange(n_frames, dtype=float)
     times = np.asarray(times, dtype=float)
-    if times.size != len(frame_list):
+    if times.size != n_frames:
         raise ValueError("len(times) must match the number of frames")
 
     psf_os = None
@@ -125,7 +138,6 @@ def run_photometry(
     else:
         geom = geometry_from_r_ap(r_ap, r_in, r_out, centroid_box, fit_shape)
 
-    frame0 = frame_list[0]
     target_idx = pick_target(frame0.catalog, target)
     ref_idx = pick_references(
         frame0.catalog,
@@ -156,7 +168,8 @@ def run_photometry(
     model = build_psf_model(meta0, oversample=oversample, psf_os=psf_os) if method == "psf" else None
 
     rows = []
-    for k, fr in enumerate(frame_list):
+    for k in range(n_frames):
+        fr = frame0 if k == 0 else load_frame(frames[k])
         x_init, y_init = fr.wcs.world_to_pixel_values(ras, decs)
         x_init = np.atleast_1d(np.asarray(x_init, dtype=float))
         y_init = np.atleast_1d(np.asarray(y_init, dtype=float))
@@ -177,7 +190,7 @@ def run_photometry(
             on_frame(
                 {
                     "frame": k,
-                    "n_frames": len(frame_list),
+                    "n_frames": n_frames,
                     "time": float(times[k]),
                     "image_e": fr.image_e,
                     "wcs": fr.wcs,
@@ -217,7 +230,7 @@ def run_photometry(
         "method": method,
         "target_source_id": int(source_ids[0]),
         "n_ref": len(ref_idx),
-        "n_frames": len(frame_list),
+        "n_frames": n_frames,
         "sensorfilter": meta0["sensorfilter"],
         "focus": int(meta0["focus"]),
         "r_ap": geom.r_ap,
@@ -230,4 +243,8 @@ def run_photometry(
     result = PhotometryResult(stars, measurements, lightcurve, params)
     if output is not None:
         result.write(output)
+    if report is not None:
+        from .report import make_report
+
+        make_report(result, frame=frame0, path=report)
     return result

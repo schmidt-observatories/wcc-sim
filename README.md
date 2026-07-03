@@ -57,6 +57,12 @@ right); in Python, pass `on_frame=wcc_phot.LiveViewer()` or any callable
 to hook custom displays. See `scripts/example_photometry.sh` and
 `notebooks/08_wcc_phot_photometry.ipynb`.
 
+Add `--report report.pdf` (or `run_photometry(..., report=...)`) to write
+a one-page PDF + PNG diagnostic report: the field with apertures/annuli,
+the relative light curve, per-star raw fluxes, x/y centroid drifts,
+annulus backgrounds, binned RMS vs bin size, per-star RMS vs G against
+the predicted errors, and a noise-metrics summary.
+
 Default aperture geometry (radius, annulus, centroid box) comes from the
 95% encircled-energy radius of the wcc-sim PSF model for the frames'
 sensorfilter/focus/jitter; PSF mode fits that same model with photutils.
@@ -79,3 +85,6 @@ once, plus a `pandoc` binary):
 Tutorial notebooks are in `notebooks/` (executed outputs included; the Gaia
 queries they need are cached in `notebooks/gaia_cache/`, so they run offline).
 Ready-to-run CLI examples are in `scripts/example_*.sh`.
+`scripts/transit_trappist1b.py` is an end-to-end validation: it injects the
+TRAPPIST-1b transit (via `lazuli_transit`) into the Gaia catalog, simulates
+36 x 300 s defocused frames, runs `wcc_phot`, and checks the recovered depth.

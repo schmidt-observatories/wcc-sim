@@ -54,6 +54,30 @@ def load_frame(source):
     return _frame_from_hdulist(source)
 
 
+def frame_meta(source):
+    """Read a frame's header metadata without loading the pixel data.
+
+    Same dispatch as load_frame (Frame / SimulatedField / FITS path /
+    HDUList) but for a path it reads only the SCI header, so a frame
+    series can be validated up front without holding every image in
+    memory. Returns the same meta dict load_frame builds.
+    """
+    if isinstance(source, Frame):
+        return source.meta
+    if hasattr(source, "image_e") and hasattr(source, "params"):
+        return {key: source.params[key] for key in _META_CARDS}
+    if isinstance(source, (str, os.PathLike)):
+        header = fits.getheader(source, "SCI")
+    else:
+        header = source["SCI"].header
+    try:
+        return {key: header[card] for key, card in _META_CARDS.items()}
+    except KeyError as err:
+        raise ValueError(
+            f"missing header card {err} — is this a wcc-sim FITS file?"
+        ) from None
+
+
 def _frame_from_hdulist(hdul):
     header = hdul["SCI"].header
     try:

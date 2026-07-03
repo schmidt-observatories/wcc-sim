@@ -40,6 +40,10 @@ def build_parser():
                    help="reject refs with a neighbor brighter than G+iso_dmag")
     p.add_argument("--lc-csv", default=None,
                    help="also write the light curve as ECSV")
+    p.add_argument("--report", default=None, metavar="PATH",
+                   help="write a one-page PDF + PNG diagnostic report "
+                        "(field + apertures, light curve, centroids, "
+                        "noise metrics)")
     p.add_argument("--live", action="store_true",
                    help="live matplotlib window: frame + apertures + light "
                         "curve updated as each image is analyzed")
@@ -81,6 +85,7 @@ def main(argv=None):
         iso_dmag=args.iso_dmag,
         output=args.output,
         on_frame=viewer,
+        report=args.report,
     )
     if args.lc_csv is not None:
         result.lightcurve.write(args.lc_csv, format="ascii.ecsv", overwrite=True)
