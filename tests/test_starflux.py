@@ -81,3 +81,23 @@ def test_rate_reference_pin():
     from wcc_sim.starflux import rate_for_spt
 
     assert rate_for_spt("G2V", "zwo:r") == pytest.approx(38484.388331215, rel=1e-3)
+
+
+def test_spt_override_column(monkeypatch):
+    import wcc_sim.starflux as sf
+
+    rates = {"G2V": 1.0, "M2III": 2.0}
+    monkeypatch.setattr(sf, "rate_for_spt", lambda spt, f: rates[str(spt)])
+    catalog = Table(
+        {
+            "phot_g_mean_mag": [15.0, 15.0, 15.0],
+            "phot_bp_mean_mag": [np.nan] * 3,
+            "phot_rp_mean_mag": [np.nan] * 3,
+            # NaN colors -> base type G2V; row 1 overridden (and longer
+            # than the base dtype width — must not be truncated)
+            "spt": ["", "M2III", ""],
+        }
+    )
+    out_rates, spts = sf.rates_for_catalog(catalog, "zwo:r")
+    assert list(spts) == ["G2V", "M2III", "G2V"]
+    assert out_rates == pytest.approx([1.0, 2.0, 1.0])
