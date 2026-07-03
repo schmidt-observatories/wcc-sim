@@ -26,9 +26,14 @@ def make_psf_source(focus):
 
 
 def render_oversampled_psf(
-    sim, focus, oversample=11, stamp_npix=None, jitter_sigma_mas=None
+    sim, focus, oversample=11, stamp_npix=None, jitter_sigma_mas=None,
+    wavelength_m=None,
 ):
-    """Normalized PSF on a (stamp_npix*oversample)^2 fine grid, centered."""
+    """Normalized PSF on a (stamp_npix*oversample)^2 fine grid, centered.
+
+    `wavelength_m` overrides the sensor central wavelength (Airy path only;
+    DefocusPSF is a fixed Huygens image and ignores wavelength).
+    """
     source = make_psf_source(focus)
     if stamp_npix is None:
         stamp_npix = DEFAULT_STAMP[focus]
@@ -45,7 +50,11 @@ def render_oversampled_psf(
         npix=n_fine,
         pixel_size_um=float(sensor.pixel_size.value) / oversample,
         plate_scale_mas=plate_mas / oversample,
-        wavelength_m=float(sensor.wavelength.to("m").value),
+        wavelength_m=(
+            float(sensor.wavelength.to("m").value)
+            if wavelength_m is None
+            else float(wavelength_m)
+        ),
         diameter_m=float(telescope.diameter_primary.to("m").value),
         fnum=float(telescope.f_num),
         jitter_sigma_mas=jitter_sigma_mas,

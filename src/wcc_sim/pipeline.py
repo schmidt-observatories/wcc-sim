@@ -8,7 +8,9 @@ from astropy.table import Table
 from astropy.wcs import WCS
 
 from .catalog import query_gaia
+from .chromatic import effective_psf_for_spt
 from .detectors import get_geometry, make_base_simulation
+from .extended import render_extended
 from .fitswriter import build_hdulist, write_fits
 from .psf import DEFAULT_STAMP, render_oversampled_psf
 from .render import (
@@ -66,6 +68,8 @@ def simulate_field(
     wings=True,
     cache_dir=None,
     write_clean=True,
+    extended_sources=None,
+    chromatic=False,
 ):
     """Simulate one WCC detector image of the Gaia field at (ra, dec).
 
@@ -75,6 +79,14 @@ def simulate_field(
     PSFs beyond the finite stamp with an analytic power-law wing (see
     wcc_sim.wings) so truncation stays below 0.1 sigma of the background
     noise instead of printing square "postage stamp" edges.
+
+    `extended_sources` (list of wcc_sim.extended.SersicComponent) adds
+    smooth analytic components, rendered at native resolution and
+    FFT-convolved with the PSF before the noise model. `chromatic=True`
+    replaces the central-wavelength PSF with spectrum-weighted effective
+    PSFs — per spectral type for point sources and per (template, ebv)
+    for extended components; it is a documented no-op for focus != 0
+    (the defocus PSF has no wavelength model).
     """
     sim = make_base_simulation(sensorfilter)
     geom = get_geometry(sensorfilter, sim=sim)
@@ -130,10 +142,48 @@ def simulate_field(
         )
         wing_floor_e = 0.1 * sigma_floor
 
-    image_sources = render_scene(
-        shape, xs, ys, rates * exptime, psf_os, oversample,
-        wing=wing, floor_e=wing_floor_e,
-    )
+    chromatic_active = bool(chromatic) and focus == 0
+
+    def _wing_for(psf):
+        return fit_wing_model(bin_oversampled(psf, oversample)) if wings else None
+
+    if chromatic_active and len(catalog):
+        image_sources = np.zeros(shape, dtype=np.float32)
+        for spt in np.unique(spts):
+            sel = spts == spt
+            psf_spt = effective_psf_for_spt(
+                sim, sensorfilter, spt, 0.0, focus, oversample,
+                stamp_npix=n_stamp, jitter_sigma_mas=jitter_sigma_mas,
+            )
+            image_sources += render_scene(
+                shape, xs[sel], ys[sel], rates[sel] * exptime, psf_spt,
+                oversample, wing=_wing_for(psf_spt), floor_e=wing_floor_e,
+            )
+    else:
+        image_sources = render_scene(
+            shape, xs, ys, rates * exptime, psf_os, oversample,
+            wing=wing, floor_e=wing_floor_e,
+        )
+
+    if extended_sources:
+        kernels = {}
+        for comp in extended_sources:
+            key = (comp.template, float(comp.ebv))
+            if key in kernels:
+                continue
+            if chromatic_active:
+                psf_ext = effective_psf_for_spt(
+                    sim, sensorfilter, comp.template, comp.ebv, focus,
+                    oversample, stamp_npix=n_stamp,
+                    jitter_sigma_mas=jitter_sigma_mas,
+                )
+            else:
+                psf_ext = psf_os
+            kernels[key] = bin_oversampled(psf_ext, oversample)
+        image_sources += render_extended(
+            extended_sources, wcs, shape, geom.plate_scale_mas,
+            sensorfilter, kernels, wing=wing,
+        ) * np.float32(exptime)
 
     rng = np.random.default_rng(seed)
     out = add_noise_and_digitize(
@@ -191,6 +241,8 @@ def simulate_field(
             if sim.sensor.meta.get("well_depth") is not None
             else None
         ),
+        "chromatic": bool(chromatic),
+        "n_extended": len(extended_sources) if extended_sources else 0,
     }
 
     result = SimulatedField(

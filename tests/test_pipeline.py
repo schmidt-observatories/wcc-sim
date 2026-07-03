@@ -95,3 +95,61 @@ def test_empty_catalog_sky_only():
     )
     assert f.image_adu.std() > 0  # noise present
     assert len(f.catalog) == 0
+
+
+def test_extended_source_adds_flux(canned_catalog):
+    from wcc_sim import SersicComponent
+    from wcc_sim.extended import component_amplitude, sersic_total_over_amplitude
+
+    comp = SersicComponent(ra=RA0, dec=DEC0, n=1.0, r_eff_arcsec=0.05,
+                           total_mag=16.0)
+    single = canned_catalog[[3]]  # one faint star only
+    base = run(single, add_noise=False)
+    ext = run(single, add_noise=False, extended_sources=[comp])
+    extra = float(ext.image_clean.sum() - base.image_clean.sum())
+    plate = base.params["plate_scale_mas"]
+    amp = component_amplitude(comp, "zwo:r", plate)
+    r_eff_pix = comp.r_eff_arcsec * 1000.0 / plate
+    expected = (
+        amp * sersic_total_over_amplitude(comp.n, r_eff_pix, comp.ellip)
+        * base.params["exptime"]
+    )
+    # wing renormalization holds back the stamp-truncated fraction: for
+    # stamp_npix=33/oversample=11 zwo:r in-focus PSF, energy_beyond(half=16)
+    # is ~2.4% (verified via wcc_sim.wings.WingModel.energy_beyond using the
+    # fitted params in base.params), so rel=0.02 is slightly too tight here.
+    assert extra == pytest.approx(expected, rel=0.03)
+    assert ext.params["n_extended"] == 1
+    assert base.params["n_extended"] == 0
+
+
+def test_extended_in_fits_header(canned_catalog, tmp_path):
+    from wcc_sim import SersicComponent
+
+    comp = SersicComponent(ra=RA0, dec=DEC0, n=1.0, r_eff_arcsec=0.05,
+                           total_mag=16.0)
+    path = tmp_path / "ext.fits"
+    run(canned_catalog, extended_sources=[comp], output=str(path))
+    from astropy.io import fits
+
+    header = fits.getheader(path, "SCI")
+    assert header["NEXTSRC"] == 1
+    assert header["CHROMPSF"] is False
+
+
+def test_chromatic_changes_in_focus_image(canned_catalog):
+    mono = run(canned_catalog, add_noise=False)
+    chrom = run(canned_catalog, add_noise=False, chromatic=True)
+    assert chrom.params["chromatic"] is True
+    assert not np.array_equal(mono.image_clean, chrom.image_clean)
+    # rates are untouched: total flux agrees to the wing-truncation level
+    assert chrom.image_clean.sum() == pytest.approx(
+        mono.image_clean.sum(), rel=0.01
+    )
+
+
+def test_chromatic_defocus_is_passthrough(canned_catalog):
+    mono = run(canned_catalog, add_noise=False, focus=1, stamp_npix=65)
+    chrom = run(canned_catalog, add_noise=False, focus=1, stamp_npix=65,
+                chromatic=True)
+    assert np.array_equal(mono.image_clean, chrom.image_clean)

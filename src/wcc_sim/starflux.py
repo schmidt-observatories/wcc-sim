@@ -80,13 +80,30 @@ def rate_for_spt(spt, sensorfilter):
 
 
 def rates_for_catalog(catalog, sensorfilter):
-    """Per-star (rate_e_s, spt) arrays for a Gaia catalog Table."""
+    """Per-star (rate_e_s, spt) arrays for a Gaia catalog Table.
+
+    An optional `spt` column overrides the BP-RP lookup row-wise (empty
+    string = no override).
+    """
     g = np.asarray(catalog["phot_g_mean_mag"], dtype=float)
     bp = np.ma.filled(np.ma.masked_invalid(
         np.asarray(catalog["phot_bp_mean_mag"], dtype=float)), np.nan)
     rp = np.ma.filled(np.ma.masked_invalid(
         np.asarray(catalog["phot_rp_mean_mag"], dtype=float)), np.nan)
     spts = spt_from_bp_rp(bp - rp)
+    if "spt" in catalog.colnames:
+        # Optional per-row override (e.g. supergiant templates for injected
+        # Cepheids — the BP-RP table maps to dwarfs only). Empty string
+        # means "no override". Merge via object dtype: assigning into the
+        # fixed-width array from spt_from_bp_rp would silently truncate
+        # longer type names.
+        override = np.array(
+            [str(s).strip() for s in catalog["spt"]], dtype=object
+        )
+        merged = spts.astype(object)
+        use = override != ""
+        merged[use] = override[use]
+        spts = merged.astype(str)
     rates = np.array(
         [
             rate_for_spt(spt, sensorfilter) * 10.0 ** (-0.4 * (gmag - REF_MAG))

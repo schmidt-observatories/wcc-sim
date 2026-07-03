@@ -221,3 +221,4 @@ smoke_out/
 # wcc-sim notebook outputs
 notebooks/*.fits
 transit_out/
+cepheid_out/

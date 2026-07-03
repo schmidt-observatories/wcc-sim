@@ -16,6 +16,7 @@ dependencies = [
     "astroquery",
     "synphot",
     "photutils",
+    "dust_extinction",
 ]
 
 [project.scripts]
