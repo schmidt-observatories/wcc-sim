@@ -51,6 +51,12 @@ CLI:
 
     wcc-phot f*.fits --ra 150.1 --dec 2.2 --method psf -o phot.fits
 
+Add `--live` for a matplotlib window that updates as each frame is
+analyzed (image + apertures on the left, growing light curve on the
+right); in Python, pass `on_frame=wcc_phot.LiveViewer()` or any callable
+to hook custom displays. See `scripts/example_photometry.sh` and
+`notebooks/08_wcc_phot_photometry.ipynb`.
+
 Default aperture geometry (radius, annulus, centroid box) comes from the
 95% encircled-energy radius of the wcc-sim PSF model for the frames'
 sensorfilter/focus/jitter; PSF mode fits that same model with photutils.
