@@ -40,6 +40,13 @@ def build_parser():
                    help="reject refs with a neighbor brighter than G+iso_dmag")
     p.add_argument("--lc-csv", default=None,
                    help="also write the light curve as ECSV")
+    p.add_argument("--live", action="store_true",
+                   help="live matplotlib window: frame + apertures + light "
+                        "curve updated as each image is analyzed")
+    p.add_argument("--live-pause", type=float, default=0.2,
+                   help="seconds to pause on each frame in live mode")
+    p.add_argument("--live-zoom", type=int, default=None,
+                   help="crop the live image panel to +-N px around the target")
     p.add_argument("-o", "--output", required=True,
                    help="output FITS path (STARS/PHOT/LC)")
     return p
@@ -54,6 +61,12 @@ def main(argv=None):
     else:
         build_parser().error("give --source-id or both --ra and --dec")
 
+    viewer = None
+    if args.live:
+        from .live import LiveViewer
+
+        viewer = LiveViewer(pause=args.live_pause, zoom=args.live_zoom)
+
     result = run_photometry(
         args.frames,
         target,
@@ -67,6 +80,7 @@ def main(argv=None):
         ee=args.ee,
         iso_dmag=args.iso_dmag,
         output=args.output,
+        on_frame=viewer,
     )
     if args.lc_csv is not None:
         result.lightcurve.write(args.lc_csv, format="ascii.ecsv", overwrite=True)
@@ -82,6 +96,8 @@ def main(argv=None):
         f"{result.params['r_ap']:.1f} px; rel-flux rms {rms_ppm:.0f} ppm "
         f"(median error {err_ppm:.0f} ppm)"
     )
+    if viewer is not None:
+        viewer.hold()
     return 0
 
 

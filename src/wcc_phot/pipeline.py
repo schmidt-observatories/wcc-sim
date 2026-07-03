@@ -77,6 +77,7 @@ def run_photometry(
     iso_radius=None,
     times=None,
     output=None,
+    on_frame=None,
 ):
     """Aperture or PSF photometry of a target + best n_ref reference stars.
 
@@ -86,7 +87,11 @@ def run_photometry(
     starting from its WCS-predicted position. When `r_ap` is None the
     aperture geometry comes from the model-PSF encircled energy (`ee`).
     `times` (optional, len == n frames) is recorded in the tables; frame
-    index is used otherwise. Returns a PhotometryResult (optionally also
+    index is used otherwise. `on_frame` (optional callable, e.g. a
+    wcc_phot.live.LiveViewer) is called after each frame is measured with
+    an event dict (frame, n_frames, time, image_e, wcs, x, y, roles,
+    geom, flux_e, flux_err_e, flags, rel_flux, rel_flux_err) for live
+    display or custom hooks. Returns a PhotometryResult (optionally also
     written to `output` as a STARS/PHOT/LC FITS).
     """
     if method not in ("aperture", "psf"):
@@ -161,6 +166,31 @@ def run_photometry(
         if method == "psf":
             flux, flux_err, x, y = psf_photometry_frame(
                 fr, x, y, flux, model, geom
+            )
+        if on_frame is not None:
+            flux_ens = float(np.sum(flux[1:]))
+            err_ens = float(np.sqrt(np.sum(flux_err[1:] ** 2)))
+            rel = float(flux[0]) / flux_ens
+            rel_err = abs(rel) * float(
+                np.hypot(flux_err[0] / flux[0], err_ens / flux_ens)
+            )
+            on_frame(
+                {
+                    "frame": k,
+                    "n_frames": len(frame_list),
+                    "time": float(times[k]),
+                    "image_e": fr.image_e,
+                    "wcs": fr.wcs,
+                    "x": x,
+                    "y": y,
+                    "roles": roles,
+                    "geom": geom,
+                    "flux_e": flux,
+                    "flux_err_e": flux_err,
+                    "flags": flags,
+                    "rel_flux": rel,
+                    "rel_flux_err": rel_err,
+                }
             )
         for j in range(len(indices)):
             rows.append(
