@@ -120,3 +120,23 @@ def effective_psf_for_spt(sim, sensorfilter, spt, ebv, focus, oversample,
             n_nodes=n_nodes, ebv=float(ebv),
         )
     return _EFF_PSF_CACHE[key]
+
+
+@lru_cache(maxsize=256)
+def attenuation_factor(template, ebv, sensorfilter, rv=3.1):
+    """Band-averaged flux attenuation of `template` for a given E(B-V).
+
+    a = int S T 10^(-0.4 A(lambda)) dlambda / int S T dlambda with a
+    Fitzpatrick (1999) curve; the exact broadband dimming factor to apply
+    to the unreddened wcc_etc count rate.
+    """
+    ebv = float(ebv)
+    if ebv < 0.0:
+        raise ValueError(f"ebv must be >= 0, got {ebv}")
+    if ebv == 0.0:
+        return 1.0
+    sim = make_base_simulation(sensorfilter)
+    spectrum = get_scene_element(str(template), mag=15.0).spectrum
+    wave_aa, st = _weighted_flux(sim, spectrum)
+    trans = F99(Rv=rv).extinguish(wave_aa * u.AA, Ebv=ebv)
+    return float(np.trapz(st * trans, wave_aa) / np.trapz(st, wave_aa))

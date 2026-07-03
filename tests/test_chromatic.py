@@ -92,3 +92,30 @@ def test_bad_n_nodes_raises():
 
     with pytest.raises(ValueError):
         effective_psf(_sim(), 0, _spectrum("G2V"), n_nodes=0)
+
+
+def test_attenuation_zero_ebv_is_one():
+    from wcc_sim.chromatic import attenuation_factor
+
+    assert attenuation_factor("G2V", 0.0, "zwo:i") == 1.0
+
+
+def test_attenuation_monotonic_and_band_dependent():
+    from wcc_sim.chromatic import attenuation_factor
+
+    a1 = attenuation_factor("G2V", 0.1, "zwo:i")
+    a2 = attenuation_factor("G2V", 0.3, "zwo:i")
+    assert 0.0 < a2 < a1 < 1.0
+    # zwo:i (~690-855 nm) is redder than V: attenuation must be milder
+    # than the full A_V = R_V * E(B-V) dimming, but real (< 1).
+    av_floor = 10.0 ** (-0.4 * 3.1 * 0.1)
+    assert av_floor < a1 < 1.0
+
+
+def test_attenuation_negative_ebv_raises():
+    import pytest as _pytest
+
+    from wcc_sim.chromatic import attenuation_factor
+
+    with _pytest.raises(ValueError):
+        attenuation_factor("G2V", -0.1, "zwo:i")
