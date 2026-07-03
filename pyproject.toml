@@ -15,10 +15,12 @@ dependencies = [
     "astropy",
     "astroquery",
     "synphot",
+    "photutils",
 ]
 
 [project.scripts]
 wcc-sim = "wcc_sim.cli:main"
+wcc-phot = "wcc_phot.cli:main"
 
 [project.optional-dependencies]
 test = ["pytest"]

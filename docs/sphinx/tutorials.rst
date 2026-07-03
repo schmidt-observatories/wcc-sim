@@ -36,6 +36,10 @@ run offline.
      - The analytic PSF wing extension: before/after images at hard
        stretch, the fitted power-law wing models, seam smoothness at the
        old stamp edge, and how the wings change the encircled energy.
+   * - :doc:`notebooks/08_wcc_phot_photometry`
+     - The ``wcc_phot`` differential photometry pipeline: target +
+       reference selection, per-frame centroiding, aperture vs PSF
+       fluxes, the relative light curve, and the live viewer hook.
 
 .. toctree::
    :maxdepth: 1
@@ -48,3 +52,4 @@ run offline.
    notebooks/05_astrometry_and_catalogs
    notebooks/06_cli_and_fits
    notebooks/07_psf_wings
+   notebooks/08_wcc_phot_photometry
