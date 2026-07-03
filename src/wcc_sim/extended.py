@@ -91,3 +91,54 @@ def component_amplitude(comp, sensorfilter, plate_scale_mas):
         )
     sb_rate = rate_ref * 10.0 ** (-0.4 * (comp.sb_mag_arcsec2 - REF_MAG)) * att
     return sb_rate * pix_arcsec**2
+
+
+def _r999_pix(n, r_eff_pix):
+    """Radius enclosing 99.9% of the Sersic flux, in pixels."""
+    bn = float(gammaincinv(2.0 * n, 0.5))
+    return r_eff_pix * (float(gammaincinv(2.0 * n, 0.999)) / bn) ** n
+
+
+def render_component_profile(comp, wcs, shape, plate_scale_mas, sensorfilter):
+    """Component surface brightness in e-/s/pix on the native grid
+    (unconvolved); None if the 99.9%-flux footprint misses the frame.
+
+    The profile is evaluated at pixel centers in row chunks (full-frame
+    float64 temporaries would be ~GB); a box around the center is
+    re-evaluated on a _REFINE x subgrid and averaged, since a Sersic cusp
+    changes across a pixel while the rest of the profile does not.
+    """
+    ny, nx = shape
+    x0, y0 = (float(v) for v in wcs.world_to_pixel_values(comp.ra, comp.dec))
+    r_eff_pix = comp.r_eff_arcsec * 1000.0 / plate_scale_mas
+    dx = max(0.0, -x0, x0 - (nx - 1))
+    dy = max(0.0, -y0, y0 - (ny - 1))
+    if np.hypot(dx, dy) > _r999_pix(comp.n, r_eff_pix):
+        return None
+
+    amp = component_amplitude(comp, sensorfilter, plate_scale_mas)
+    mod = Sersic2D(
+        amplitude=amp, r_eff=r_eff_pix, n=comp.n, x_0=x0, y_0=y0,
+        ellip=comp.ellip, theta=np.radians(comp.pa_deg),
+    )
+
+    img = np.empty(shape, dtype=np.float32)
+    xx = np.arange(nx, dtype=float)[None, :]
+    for y_lo in range(0, ny, 1024):
+        y_hi = min(y_lo + 1024, ny)
+        yy = np.arange(y_lo, y_hi, dtype=float)[:, None]
+        img[y_lo:y_hi] = mod(xx, yy)
+
+    half = int(np.clip(np.ceil(2.0 * r_eff_pix), _REFINE_HALF_MIN,
+                       _REFINE_HALF_MAX))
+    bx_lo, bx_hi = max(int(x0) - half, 0), min(int(x0) + half + 1, nx)
+    by_lo, by_hi = max(int(y0) - half, 0), min(int(y0) + half + 1, ny)
+    if bx_lo < bx_hi and by_lo < by_hi:
+        off = (np.arange(_REFINE) + 0.5) / _REFINE - 0.5
+        fx = (np.arange(bx_lo, bx_hi, dtype=float)[:, None] + off).ravel()
+        fy = (np.arange(by_lo, by_hi, dtype=float)[:, None] + off).ravel()
+        fine = mod(fx[None, :], fy[:, None])
+        img[by_lo:by_hi, bx_lo:bx_hi] = fine.reshape(
+            by_hi - by_lo, _REFINE, bx_hi - bx_lo, _REFINE
+        ).mean(axis=(1, 3))
+    return img

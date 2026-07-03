@@ -74,3 +74,79 @@ def test_reddening_dims_amplitude():
     a0 = component_amplitude(_comp(), "zwo:r", PLATE_MAS)
     a1 = component_amplitude(_comp(ebv=0.3), "zwo:r", PLATE_MAS)
     assert a1 < a0
+
+
+SHAPE = (256, 256)
+
+
+def _wcs(shape=SHAPE):
+    from wcc_sim.wcsutil import build_wcs
+
+    return build_wcs(RA0, DEC0, PLATE_MAS, 0.0, shape)
+
+
+def _moments(img):
+    ny, nx = img.shape
+    yy, xx = np.mgrid[:ny, :nx]
+    t = img.sum()
+    cx, cy = (img * xx).sum() / t, (img * yy).sum() / t
+    return (
+        (img * (xx - cx) ** 2).sum() / t,
+        (img * (yy - cy) ** 2).sum() / t,
+    )
+
+
+def test_profile_flux_conserved_exponential():
+    from wcc_sim.extended import (
+        component_amplitude,
+        render_component_profile,
+        sersic_total_over_amplitude,
+    )
+
+    comp = _comp(n=1.0, r_eff_arcsec=0.05, total_mag=18.0)  # r_eff ~ 3 px
+    img = render_component_profile(comp, _wcs(), SHAPE, PLATE_MAS, "zwo:r")
+    amp = component_amplitude(comp, "zwo:r", PLATE_MAS)
+    r_eff_pix = comp.r_eff_arcsec * 1000.0 / PLATE_MAS
+    total = amp * sersic_total_over_amplitude(comp.n, r_eff_pix, comp.ellip)
+    assert img.dtype == np.float32
+    assert img.sum() == pytest.approx(total, rel=0.005)
+
+
+def test_profile_flux_conserved_devauc():
+    from wcc_sim.extended import (
+        component_amplitude,
+        render_component_profile,
+        sersic_total_over_amplitude,
+    )
+
+    comp = _comp(n=4.0, r_eff_arcsec=0.02, total_mag=18.0)  # cuspy center
+    img = render_component_profile(comp, _wcs(), SHAPE, PLATE_MAS, "zwo:r")
+    amp = component_amplitude(comp, "zwo:r", PLATE_MAS)
+    r_eff_pix = comp.r_eff_arcsec * 1000.0 / PLATE_MAS
+    total = amp * sersic_total_over_amplitude(comp.n, r_eff_pix, comp.ellip)
+    # n=4 keeps ~1% of its flux beyond the 128 px frame half-width;
+    # require the rendered sum to land between 97% and 100.5% of analytic.
+    assert 0.97 * total < img.sum() < 1.005 * total
+
+
+def test_profile_orientation():
+    from wcc_sim.extended import render_component_profile
+
+    ex = _comp(ellip=0.6, pa_deg=0.0, r_eff_arcsec=0.2)
+    ey = _comp(ellip=0.6, pa_deg=90.0, r_eff_arcsec=0.2)
+    ix = render_component_profile(ex, _wcs(), SHAPE, PLATE_MAS, "zwo:r")
+    iy = render_component_profile(ey, _wcs(), SHAPE, PLATE_MAS, "zwo:r")
+    vxx_x, vyy_x = _moments(ix)
+    vxx_y, vyy_y = _moments(iy)
+    assert vxx_x > vyy_x  # pa=0: major axis along +x
+    assert vyy_y > vxx_y  # pa=90: rotated onto +y
+
+
+def test_far_off_frame_component_skipped():
+    from wcc_sim.extended import render_component_profile
+
+    comp = _comp(dec=DEC0 + 5.0, r_eff_arcsec=0.5)
+    assert (
+        render_component_profile(comp, _wcs(), SHAPE, PLATE_MAS, "zwo:r")
+        is None
+    )
