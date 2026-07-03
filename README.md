@@ -31,6 +31,32 @@ Detectors: `zwo:*` = Sony IMX455, 9568x6380 px, 16.87 mas/pix;
 `qcmos:*` = Hamamatsu HWK4123, 4096x2304 px, 20.64 mas/pix.
 `--focus 0|1|2` selects in-focus / +1 wave / +2 waves defocus PSFs.
 
+## Photometry (wcc-phot)
+
+The sibling `wcc_phot` package extracts differential aperture or PSF
+photometry from a series of wcc-sim frames of the same field: it picks the
+target (Gaia source_id or RA/Dec) plus the N=10 best reference stars
+(unsaturated, isolated, away from edges, closest in G to the target),
+re-centroids every star in every frame from its WCS-predicted position,
+and builds a relative light curve against the reference ensemble.
+
+Python:
+
+    from wcc_phot import run_photometry
+    result = run_photometry(["f0.fits", "f1.fits"], target=(150.1, 2.2),
+                            method="aperture", n_ref=10)
+    result.lightcurve  # per frame: rel_flux_norm, errors, flags
+
+CLI:
+
+    wcc-phot f*.fits --ra 150.1 --dec 2.2 --method psf -o phot.fits
+
+Default aperture geometry (radius, annulus, centroid box) comes from the
+95% encircled-energy radius of the wcc-sim PSF model for the frames'
+sensorfilter/focus/jitter; PSF mode fits that same model with photutils.
+Output FITS extensions: STARS (selection), PHOT (per star per frame),
+LC (per frame).
+
 ## Tests
 
     ~/anaconda3/envs/py313/bin/python -m pytest
