@@ -185,6 +185,38 @@ def test_crossmatch_is_one_to_one_and_keeps_the_closer_pair():
     assert list(idx_a) == [1] and list(idx_b) == [0]
 
 
+def test_crossmatch_does_not_match_at_a_value_under_a_mask():
+    """The third instance of the branch's recurring bug: np.asarray on a
+    MaskedColumn returns the data *under* the mask, so a row with no measured
+    RA would be matched at whatever number happened to be stored there --
+    0.0 after an ECSV round-trip. A row with no position matches nothing."""
+    from astropy.table import MaskedColumn, Table
+
+    from wcc_sim.astrometry import crossmatch
+
+    a = Table({"ra": MaskedColumn([10.0], mask=[True]), "dec": [0.0]})
+    b = _cat((10.0, 0.0))
+    idx_a, idx_b = crossmatch(a, b, 2.0)
+    assert len(idx_a) == 0 and len(idx_b) == 0
+
+    # and the same on the other side of the match
+    idx_a, idx_b = crossmatch(b, a, 2.0)
+    assert len(idx_a) == 0 and len(idx_b) == 0
+
+
+def test_crossmatch_skips_a_positionless_row_without_dropping_the_others():
+    """A NaN reaching match_to_catalog_sky raises rather than being skipped,
+    so the bad row must be held out, not passed through."""
+    from astropy.table import Table
+
+    from wcc_sim.astrometry import crossmatch
+
+    a = Table({"ra": [np.nan, 10.0001], "dec": [0.0, 0.0]})
+    b = _cat((10.0, 0.0))
+    idx_a, idx_b = crossmatch(a, b, 2.0)
+    assert list(idx_a) == [1] and list(idx_b) == [0]
+
+
 def test_crossmatch_handles_empty_inputs():
     from wcc_sim.astrometry import crossmatch
 

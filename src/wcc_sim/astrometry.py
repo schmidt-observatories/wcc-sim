@@ -19,7 +19,11 @@ _FAR_PC = 1e6
 
 
 def as_time(epoch):
-    """A Julian year (2016.0) or anything Time accepts -> Time."""
+    """A Julian year as a number (2016.0), or a `Time`, -> `Time`.
+
+    Not "anything Time accepts": a non-`Time` goes through `Time(f"J{...}")`,
+    so it has to be numeric -- an ISO date string raises `ValueError`.
+    """
     if isinstance(epoch, Time):
         return epoch
     return Time(f"J{float(epoch)}")
@@ -94,14 +98,23 @@ def crossmatch(a, b, radius_arcsec, ra="ra", dec="dec"):
     `idx_b[k]` of `b` are the same star. Where several rows of `a` fall on
     one row of `b`, the closest keeps it and the rest come back unmatched --
     a merge then adds them instead of silently dropping them.
+
+    Rows without a usable position are held out and come back unmatched: a
+    position is read through `_column`, so a masked RA is not matched at the
+    value under its mask, and `match_to_catalog_sky` raises on a NaN rather
+    than skipping it.
     """
     empty = (np.array([], dtype=int), np.array([], dtype=int))
     if not len(a) or not len(b):
         return empty
-    coords_a = SkyCoord(np.asarray(a[ra], dtype=float),
-                        np.asarray(a[dec], dtype=float), unit="deg")
-    coords_b = SkyCoord(np.asarray(b[ra], dtype=float),
-                        np.asarray(b[dec], dtype=float), unit="deg")
+    ra_a, dec_a = _column(a, ra, np.nan), _column(a, dec, np.nan)
+    ra_b, dec_b = _column(b, ra, np.nan), _column(b, dec, np.nan)
+    where_a = np.flatnonzero(np.isfinite(ra_a) & np.isfinite(dec_a))
+    where_b = np.flatnonzero(np.isfinite(ra_b) & np.isfinite(dec_b))
+    if not where_a.size or not where_b.size:
+        return empty
+    coords_a = SkyCoord(ra_a[where_a], dec_a[where_a], unit="deg")
+    coords_b = SkyCoord(ra_b[where_b], dec_b[where_b], unit="deg")
     nearest, sep, _ = coords_a.match_to_catalog_sky(coords_b)
     close = np.flatnonzero(sep.arcsec <= float(radius_arcsec))
     if not close.size:
@@ -118,4 +131,6 @@ def crossmatch(a, b, radius_arcsec, ra="ra", dec="dec"):
         idx_a.append(int(i))
         idx_b.append(j)
     keep = np.argsort(idx_a, kind="stable")
-    return np.asarray(idx_a, dtype=int)[keep], np.asarray(idx_b, dtype=int)[keep]
+    # back to row numbers in the caller's tables, not the held-out subsets
+    return (where_a[np.asarray(idx_a, dtype=int)[keep]],
+            where_b[np.asarray(idx_b, dtype=int)[keep]])
