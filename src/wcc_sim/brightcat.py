@@ -1,0 +1,80 @@
+"""Bright-star supplement: the stars Gaia DR3 does not have.
+
+Gaia's brightest source is G = 1.73 and it holds only 150 sources brighter
+than G = 3, so the naked-eye stars whose scattered-light halo drives WCC
+stray-light requirements are missing from it entirely -- alpha Cen A and B,
+for instance, have no DR3 entry at all. This module fills that end from
+XHIP (VizieR V/137D, Hipparcos plus radial velocities), normalizes the rows
+into the Gaia-shaped table the rest of the pipeline expects, and merges them
+by positional cross-match.
+"""
+
+import os
+import warnings
+
+import numpy as np
+from astropy import units as u
+from astropy.table import Table
+
+#: VizieR table: the Extended Hipparcos Compilation (Anderson & Francis 2012).
+XHIP_CATALOG = "V/137D/XHIP"
+
+XHIP_COLUMNS = [
+    "HIP", "RAJ2000", "DEJ2000", "pmRA", "pmDE", "Plx", "RV", "Vmag", "B-V",
+    "SpType", "Comp",
+]
+
+#: Epoch of the XHIP positions. The columns are named RAJ2000/DEJ2000, but
+#: J2000 there is the equinox, not the epoch: the values are byte-identical
+#: to I/239/hip_main's RAICRS/DEICRS, which are documented as J1991.25.
+#: Reading them as epoch J2000 puts alpha Cen 32 arcsec off.
+XHIP_EPOCH = 1991.25
+
+_DTYPES = {"HIP": np.int64, "SpType": "U32", "Comp": "U8"}
+
+
+def _empty_table():
+    return Table({c: np.array([], dtype=_DTYPES.get(c, float))
+                  for c in XHIP_COLUMNS})
+
+
+def _run_query(ra_deg, dec_deg, radius_arcsec):
+    """Synchronous VizieR cone search (network). Thin so tests can patch it."""
+    from astropy.coordinates import SkyCoord
+    from astroquery.vizier import Vizier
+
+    vizier = Vizier(columns=XHIP_COLUMNS, row_limit=-1)
+    found = vizier.query_region(
+        SkyCoord(ra_deg, dec_deg, unit="deg"),
+        radius=radius_arcsec * u.arcsec,
+        catalog=XHIP_CATALOG,
+    )
+    return found[0] if len(found) else _empty_table()
+
+
+def query_bright(ra_deg, dec_deg, radius_arcsec, cache_dir=None):
+    """XHIP rows within radius_arcsec of (ra, dec), cached like query_gaia.
+
+    A failure of the service is not fatal: it warns and returns an empty
+    table so the caller can carry on with Gaia alone. Callers record that
+    fact (see `merge`) rather than implying the bright end was filled.
+    """
+    cache_file = None
+    if cache_dir is not None:
+        os.makedirs(cache_dir, exist_ok=True)
+        key = f"xhip_{ra_deg:.6f}_{dec_deg:+.6f}_{radius_arcsec:.1f}"
+        cache_file = os.path.join(cache_dir, key + ".ecsv")
+        if os.path.exists(cache_file):
+            return Table.read(cache_file, format="ascii.ecsv")
+    try:
+        out = _run_query(ra_deg, dec_deg, radius_arcsec)
+    except Exception as exc:  # network, service, or VOTable parse failure
+        warnings.warn(
+            f"bright-star query failed ({type(exc).__name__}: {exc}); "
+            "continuing with Gaia only",
+            UserWarning,
+        )
+        return _empty_table()
+    if cache_file is not None:
+        out.write(cache_file, format="ascii.ecsv", overwrite=True)
+    return out

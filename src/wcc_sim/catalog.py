@@ -15,6 +15,9 @@ COLUMNS = [
     "phot_rp_mean_mag",
 ]
 
+#: Reference epoch of Gaia DR3 positions (Julian year).
+GAIA_EPOCH = 2016.0
+
 
 def build_adql(ra_deg, dec_deg, radius_arcsec, mag_limit):
     radius_deg = radius_arcsec / 3600.0
