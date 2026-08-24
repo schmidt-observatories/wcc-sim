@@ -69,3 +69,37 @@ def propagate(cat, from_epoch, to_epoch, ra="ra", dec="dec", pmra="pmra",
     out[ra] = moved.ra.deg
     out[dec] = moved.dec.deg
     return out
+
+
+def crossmatch(a, b, radius_arcsec, ra="ra", dec="dec"):
+    """One-to-one nearest matches between two catalogs.
+
+    Returns `(idx_a, idx_b)` such that row `idx_a[k]` of `a` and row
+    `idx_b[k]` of `b` are the same star. Where several rows of `a` fall on
+    one row of `b`, the closest keeps it and the rest come back unmatched --
+    a merge then adds them instead of silently dropping them.
+    """
+    empty = (np.array([], dtype=int), np.array([], dtype=int))
+    if not len(a) or not len(b):
+        return empty
+    coords_a = SkyCoord(np.asarray(a[ra], dtype=float),
+                        np.asarray(a[dec], dtype=float), unit="deg")
+    coords_b = SkyCoord(np.asarray(b[ra], dtype=float),
+                        np.asarray(b[dec], dtype=float), unit="deg")
+    nearest, sep, _ = coords_a.match_to_catalog_sky(coords_b)
+    close = np.flatnonzero(sep.arcsec <= float(radius_arcsec))
+    if not close.size:
+        return empty
+    # one-to-one: among rows of `a` claiming the same row of `b`, keep the
+    # closest. argsort by separation, then take the first hit per b-index.
+    order = close[np.argsort(sep.arcsec[close], kind="stable")]
+    seen, idx_a, idx_b = set(), [], []
+    for i in order:
+        j = int(nearest[i])
+        if j in seen:
+            continue
+        seen.add(j)
+        idx_a.append(int(i))
+        idx_b.append(j)
+    keep = np.argsort(idx_a, kind="stable")
+    return np.asarray(idx_a, dtype=int)[keep], np.asarray(idx_b, dtype=int)[keep]

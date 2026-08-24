@@ -115,3 +115,40 @@ def test_rows_without_proper_motion_stay_put():
     still["pmdec"] = 0.0
     out = propagate(still, HIP_EPOCH, 2026.6)
     assert np.allclose(np.asarray(out["ra"]), np.asarray(HIP["ra"]))
+
+
+# --------------------------------------------------------------------------- #
+# Cross-match                                                                  #
+# --------------------------------------------------------------------------- #
+
+def _cat(*pairs):
+    return Table({"ra": [p[0] for p in pairs], "dec": [p[1] for p in pairs]})
+
+
+def test_crossmatch_pairs_within_the_radius_only():
+    from wcc_sim.astrometry import crossmatch
+
+    a = _cat((10.0, 0.0), (10.01, 0.0))            # second is 36" away
+    b = _cat((10.0001, 0.0))                       # 0.36" from the first
+    idx_a, idx_b = crossmatch(a, b, 2.0)
+    assert list(idx_a) == [0] and list(idx_b) == [0]
+
+
+def test_crossmatch_is_one_to_one_and_keeps_the_closer_pair():
+    """Two bright rows cannot both claim one Gaia row; the closer wins and
+    the other is left unmatched, so it gets added rather than dropped."""
+    from wcc_sim.astrometry import crossmatch
+
+    a = _cat((10.0002, 0.0), (10.0001, 0.0))       # 0.72" and 0.36" away
+    b = _cat((10.0, 0.0))
+    idx_a, idx_b = crossmatch(a, b, 5.0)
+    assert list(idx_a) == [1] and list(idx_b) == [0]
+
+
+def test_crossmatch_handles_empty_inputs():
+    from wcc_sim.astrometry import crossmatch
+
+    for a, b in ((_cat(), _cat((10.0, 0.0))), (_cat((10.0, 0.0)), _cat()),
+                 (_cat(), _cat())):
+        idx_a, idx_b = crossmatch(a, b, 2.0)
+        assert len(idx_a) == 0 and len(idx_b) == 0
