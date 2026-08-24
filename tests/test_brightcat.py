@@ -78,6 +78,35 @@ def test_query_bright_warns_and_degrades_when_the_service_fails(monkeypatch):
     assert out.meta["bright_query_ok"] is False
 
 
+def test_query_bright_degrades_on_a_malformed_response(monkeypatch):
+    """The deliberately broad `except` covers only the network call. A VizieR
+    schema surprise -- a column simply absent from the response -- would sail
+    past it and raise KeyError out of to_gaia_like instead, taking the run
+    down anyway."""
+    import wcc_sim.brightcat as bc
+
+    truncated = XHIP_ROWS.copy()
+    del truncated["Vmag"]
+    monkeypatch.setattr(bc, "_run_query", lambda ra, dec, radius: truncated)
+    with pytest.warns(UserWarning, match="unexpected columns|missing columns"):
+        out = bc.query_bright(219.9, -60.83, 110.0)
+    assert len(out) == 0
+    assert out.meta["bright_query_ok"] is False
+    assert set(bc.XHIP_COLUMNS).issubset(out.colnames)
+
+
+def test_a_malformed_response_is_not_cached(monkeypatch, tmp_path):
+    """Writing it would make the next offline run fail the same way."""
+    import wcc_sim.brightcat as bc
+
+    truncated = XHIP_ROWS.copy()
+    del truncated["Vmag"]
+    monkeypatch.setattr(bc, "_run_query", lambda ra, dec, radius: truncated)
+    with pytest.warns(UserWarning):
+        bc.query_bright(219.9, -60.83, 110.0, cache_dir=str(tmp_path))
+    assert list(tmp_path.glob("xhip_*.ecsv")) == []
+
+
 def test_query_bright_flags_an_empty_cone_as_a_successful_query(monkeypatch):
     """The WCC field is 162" x 108", so most pointings hold no XHIP row at
     all. That must not be reported the way a VizieR outage is."""

@@ -42,6 +42,18 @@ def _empty_table():
                   for c in XHIP_COLUMNS})
 
 
+def _missing_columns(table):
+    """The XHIP_COLUMNS `table` does not have.
+
+    `to_gaia_like` indexes these by name, so anything short of the full set
+    raises KeyError mid-simulation. Both the query and the cache check for
+    them; the two checks must stay in step (see `catalog.query_gaia` for the
+    Gaia twin -- deliberately duplicated, the signatures and cache keys
+    differ too much to share).
+    """
+    return [c for c in XHIP_COLUMNS if c not in table.colnames]
+
+
 def _run_query(ra_deg, dec_deg, radius_arcsec):
     """Synchronous VizieR cone search (network). Thin so tests can patch it."""
     from astropy.coordinates import SkyCoord
@@ -61,6 +73,10 @@ def query_bright(ra_deg, dec_deg, radius_arcsec, cache_dir=None):
 
     A failure of the service is not fatal: it warns and returns an empty
     table so the caller can carry on with Gaia alone.
+
+    A response missing any of XHIP_COLUMNS is treated the same way: the
+    broad `except` covers only the network call, and a KeyError out of
+    `to_gaia_like` later would defeat it.
 
     An empty result is ambiguous on its own -- the WCC field is 162" x 108",
     so most pointings hold no XHIP row and an empty table is the *normal*
@@ -89,6 +105,19 @@ def query_bright(ra_deg, dec_deg, radius_arcsec, cache_dir=None):
         failed = _empty_table()
         failed.meta["bright_query_ok"] = False
         return failed
+    # A schema surprise -- a requested column simply absent from the response
+    # -- sails past the `except` above and raises KeyError out of
+    # to_gaia_like instead, defeating the point of degrading gracefully.
+    missing = _missing_columns(out)
+    if missing:
+        warnings.warn(
+            f"bright-star query returned unexpected columns (missing "
+            f"{missing}); continuing with Gaia only",
+            UserWarning,
+        )
+        bad = _empty_table()
+        bad.meta["bright_query_ok"] = False
+        return bad
     out.meta["bright_query_ok"] = True
     if cache_file is not None:
         out.write(cache_file, format="ascii.ecsv", overwrite=True)
