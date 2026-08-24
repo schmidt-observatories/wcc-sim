@@ -75,6 +75,29 @@ def test_query_bright_warns_and_degrades_when_the_service_fails(monkeypatch):
         out = bc.query_bright(219.9, -60.83, 110.0)
     assert len(out) == 0
     assert set(bc.XHIP_COLUMNS).issubset(out.colnames)
+    assert out.meta["bright_query_ok"] is False
+
+
+def test_query_bright_flags_an_empty_cone_as_a_successful_query(monkeypatch):
+    """The WCC field is 162" x 108", so most pointings hold no XHIP row at
+    all. That must not be reported the way a VizieR outage is."""
+    import wcc_sim.brightcat as bc
+
+    monkeypatch.setattr(bc, "_run_query",
+                        lambda ra, dec, radius: bc._empty_table())
+    out = bc.query_bright(219.9, -60.83, 110.0)
+    assert len(out) == 0
+    assert out.meta["bright_query_ok"] is True
+
+
+def test_query_bright_flag_survives_the_cache(patched_query, tmp_path):
+    """The flag has to reach `merge` on a repeat offline run too."""
+    from wcc_sim.brightcat import query_bright
+
+    query_bright(219.9, -60.83, 110.0, cache_dir=str(tmp_path))
+    cached = query_bright(219.9, -60.83, 110.0, cache_dir=str(tmp_path))
+    assert len(patched_query) == 1
+    assert cached.meta["bright_query_ok"] is True
 
 
 # --------------------------------------------------------------------------- #
@@ -340,16 +363,44 @@ def test_merge_defaults_to_the_gaia_epoch():
 
 
 def test_merge_with_no_bright_rows_leaves_the_catalog_alone():
-    """A failed or empty bright query must not reorder or drop anything, and
-    must say so in the provenance."""
+    """An empty bright query must not reorder or drop anything: this is the
+    property that keeps every un-supplemented simulation byte-identical."""
     from wcc_sim.brightcat import _empty_table, merge
 
     gaia = _gaia((1, 219.95, -60.9, 14.3), (2, 219.96, -60.91, 12.0))
     merged, info = merge(gaia, _empty_table(), epoch=None)
-    assert list(merged["source_id"]) == [1, 2]
-    assert info["bright_catalog"] is None
+    assert list(merged["source_id"]) == [1, 2]      # input order, unsorted
     assert (info["n_bright_added"], info["n_bright_replaced"]) == (0, 0)
     assert list(merged["spt"]) == ["", ""]      # no override for Gaia rows
+
+
+def test_merge_reports_an_empty_but_successful_query_as_consulted():
+    """A hand-made table, or one from a cone that genuinely holds no bright
+    star, counts as consulted: n_bright_added = 0 with the catalog named
+    means "nothing to add", which is the common healthy case."""
+    from wcc_sim.brightcat import _empty_table, merge
+
+    merged, info = merge(_gaia((1, 219.95, -60.9, 14.3)), _empty_table(),
+                         epoch=None)
+    assert info["bright_catalog"] == "hipparcos"
+    assert info["n_bright_added"] == 0
+
+
+def test_merge_reports_a_failed_query_as_not_consulted(monkeypatch):
+    """Only a query that never reached the service reports None, so the
+    report distinguishes "no bright star here" from "we do not know"."""
+    import wcc_sim.brightcat as bc
+
+    def boom(ra, dec, radius):
+        raise ConnectionError("VizieR closed the connection")
+
+    monkeypatch.setattr(bc, "_run_query", boom)
+    with pytest.warns(UserWarning, match="bright-star query failed"):
+        empty = bc.query_bright(219.9, -60.83, 110.0)
+    merged, info = bc.merge(_gaia((1, 219.95, -60.9, 14.3)), empty, epoch=None)
+    assert info["bright_catalog"] is None
+    assert info["n_bright_added"] == 0
+    assert list(merged["source_id"]) == [1]
 
 
 def test_merge_marks_gaia_rows_with_an_empty_spt_override():

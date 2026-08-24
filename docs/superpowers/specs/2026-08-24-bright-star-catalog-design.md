@@ -240,11 +240,19 @@ the existing halo-versus-background table.
 
 ## Error handling
 
-- **VizieR unreachable, timing out, or returning no table** — `UserWarning`
-  naming the failure, empty bright table, simulation continues Gaia-only
-  with `bright_catalog=None` recorded, so the report shows the bright end
-  was not filled rather than implying it was. Mirrors `query_gaia`'s
-  existing warn-and-return-empty behaviour.
+- **VizieR unreachable, timing out, or returning a malformed table** —
+  `UserWarning` naming the failure, empty bright table, simulation continues
+  Gaia-only with `bright_catalog=None` recorded, so the report shows the
+  bright end was not filled rather than implying it was. Mirrors
+  `query_gaia`'s existing warn-and-return-empty behaviour.
+- **A successful query over a cone with no bright star** — the *common* case:
+  the field is 162" x 108", so most pointings hold no XHIP row. This is not
+  a failure and must not be reported as one. `query_bright` records the
+  outcome on the returned table's `meta["bright_query_ok"]` and `merge`
+  reads it, so `bright_catalog="hipparcos"` with `n_bright_added=0` means
+  "consulted, nothing to add" and `None` means "not consulted successfully".
+  Distinguishing the two by row count alone would report almost every
+  healthy run as an unfilled bright end.
 - **Row with no `Vmag`** — dropped, counted, one warning for the batch: no
   magnitude means no rate.
 - **Row with blank `B-V`** — G2V, the same fallback `spt_from_bp_rp` uses

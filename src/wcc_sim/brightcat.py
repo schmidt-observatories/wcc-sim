@@ -60,8 +60,14 @@ def query_bright(ra_deg, dec_deg, radius_arcsec, cache_dir=None):
     """XHIP rows within radius_arcsec of (ra, dec), cached like query_gaia.
 
     A failure of the service is not fatal: it warns and returns an empty
-    table so the caller can carry on with Gaia alone. Callers record that
-    fact (see `merge`) rather than implying the bright end was filled.
+    table so the caller can carry on with Gaia alone.
+
+    An empty result is ambiguous on its own -- the WCC field is 162" x 108",
+    so most pointings hold no XHIP row and an empty table is the *normal*
+    outcome -- so the distinction is recorded on the returned table's
+    `meta["bright_query_ok"]`: True whenever the service or the cache was
+    actually consulted, False when the query failed. `merge` reads it, and
+    reports "consulted, nothing to add" rather than "not filled".
     """
     cache_file = None
     if cache_dir is not None:
@@ -69,7 +75,9 @@ def query_bright(ra_deg, dec_deg, radius_arcsec, cache_dir=None):
         key = f"xhip_{ra_deg:.6f}_{dec_deg:+.6f}_{radius_arcsec:.1f}"
         cache_file = os.path.join(cache_dir, key + ".ecsv")
         if os.path.exists(cache_file):
-            return Table.read(cache_file, format="ascii.ecsv")
+            cached = Table.read(cache_file, format="ascii.ecsv")
+            cached.meta["bright_query_ok"] = True
+            return cached
     try:
         out = _run_query(ra_deg, dec_deg, radius_arcsec)
     except Exception as exc:  # network, service, or VOTable parse failure
@@ -78,7 +86,10 @@ def query_bright(ra_deg, dec_deg, radius_arcsec, cache_dir=None):
             "continuing with Gaia only",
             UserWarning,
         )
-        return _empty_table()
+        failed = _empty_table()
+        failed.meta["bright_query_ok"] = False
+        return failed
+    out.meta["bright_query_ok"] = True
     if cache_file is not None:
         out.write(cache_file, format="ascii.ecsv", overwrite=True)
     return out
@@ -188,11 +199,20 @@ def merge(gaia, bright, epoch=None, replace_mag=6.0, match_radius_arcsec=2.0,
 
     `epoch=None` means the Gaia epoch, so Gaia positions do not move and an
     empty bright table gives back the input catalog untouched.
+
+    `bright_catalog` in the returned info separates "consulted" from "not
+    consulted", never "empty" from "non-empty": a successful query over a
+    cone with no bright star reports `"hipparcos"` with
+    `n_bright_added = 0`, and only a failed query reports `None`. The
+    distinction rides on `bright.meta["bright_query_ok"]`, set by
+    `query_bright`; a hand-built table without the key counts as a
+    successful supply.
     """
     to_epoch = float(gaia_epoch if epoch is None else
                      (epoch.jyear if hasattr(epoch, "jyear") else epoch))
-    info = {"bright_catalog": None, "n_bright_added": 0,
-            "n_bright_replaced": 0, "epoch": to_epoch}
+    consulted = bool(getattr(bright, "meta", {}).get("bright_query_ok", True))
+    info = {"bright_catalog": "hipparcos" if consulted else None,
+            "n_bright_added": 0, "n_bright_replaced": 0, "epoch": to_epoch}
 
     gaia_moved = propagate(gaia, gaia_epoch, to_epoch, parallax="parallax",
                            rv="radial_velocity")
