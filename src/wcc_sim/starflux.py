@@ -55,6 +55,58 @@ def spt_from_bp_rp(bp_rp):
     return out.astype(str)
 
 
+@lru_cache(maxsize=1)
+def _synthetic_color_table():
+    """(spts, Johnson B-V, Gaia G - Johnson V) per Pickles template.
+
+    Vendored rather than computed: the synphot integrations cost ~8 s and
+    need the remote Johnson curves. Regenerate with
+    scripts/build_spt_colors.py.
+    """
+    path = os.path.join(DATA_DIR, "spt_synthetic_colors.csv")
+    spts = np.loadtxt(path, delimiter=",", skiprows=1, usecols=0, dtype=str)
+    b_v, g_v = np.loadtxt(path, delimiter=",", skiprows=1, usecols=(1, 2),
+                          unpack=True)
+    return spts, b_v, g_v
+
+
+def spt_from_b_v(b_v):
+    """Nearest-neighbor Pickles dwarf type for Johnson B-V; NaN -> 'G2V'.
+
+    The B-V counterpart of spt_from_bp_rp, for catalogs (Hipparcos) that
+    give Johnson photometry instead of Gaia's.
+    """
+    spts, colors, _ = _synthetic_color_table()
+    b_v = np.atleast_1d(
+        np.ma.filled(np.ma.masked_invalid(np.asarray(b_v, dtype=float)), np.nan)
+    )
+    out = np.full(b_v.shape, "G2V", dtype=object)
+    ok = np.isfinite(b_v)
+    if ok.any():
+        out[ok] = spts[np.abs(b_v[ok, None] - colors[None, :]).argmin(axis=1)]
+    return out.astype(str)
+
+
+def _by_spt(values, spt):
+    spts, _, _ = _synthetic_color_table()
+    index = {str(s): i for i, s in enumerate(spts)}
+    return np.array([values[index[str(s)]] for s in np.atleast_1d(spt)],
+                    dtype=float)
+
+
+def g_minus_v(spt):
+    """Synthetic Gaia G - Johnson V for a Pickles type."""
+    return _by_spt(_synthetic_color_table()[2], spt)
+
+
+def bp_rp_for_spt(spt):
+    """The BP-RP that spt_from_bp_rp maps back to this type."""
+    spts, colors = _spt_table()
+    index = {str(s): i for i, s in enumerate(spts)}
+    return np.array([colors[index[str(s)]] for s in np.atleast_1d(spt)],
+                    dtype=float)
+
+
 def make_star_simulation(spt, sensorfilter, mag=REF_MAG):
     """wcc_etc Simulation for one Pickles star normalized in Gaia G (vegamag)."""
     scene = get_scene(spt, mag=mag, magsys="vegamag", bandpass=gaia_g_bandpass())

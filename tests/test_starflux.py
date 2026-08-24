@@ -101,3 +101,55 @@ def test_spt_override_column(monkeypatch):
     out_rates, spts = sf.rates_for_catalog(catalog, "zwo:r")
     assert list(spts) == ["G2V", "M2III", "G2V"]
     assert out_rates == pytest.approx([1.0, 2.0, 1.0])
+
+
+# --------------------------------------------------------------------------- #
+# Synthetic Johnson colours (for V-magnitude catalogs like Hipparcos)          #
+# --------------------------------------------------------------------------- #
+
+def test_synthetic_b_v_of_the_solar_template_is_the_solar_value():
+    """The whole V -> G path rests on this: Pickles G2V through Johnson B and
+    V must give the Sun's B-V = 0.65, or the templates are being integrated
+    through the wrong passbands."""
+    from wcc_sim.starflux import _synthetic_color_table
+
+    spts, b_v, _ = _synthetic_color_table()
+    assert b_v[list(spts).index("G2V")] == pytest.approx(0.65, abs=0.01)
+
+
+def test_synthetic_g_minus_v_is_near_the_published_colour_term():
+    """-0.164 synthetic vs -0.14 from the published (BP-RP) relation; the gap
+    is that relation's own scatter, so the tolerance is deliberately loose."""
+    from wcc_sim.starflux import g_minus_v
+
+    assert g_minus_v("G2V")[0] == pytest.approx(-0.15, abs=0.03)
+
+
+def test_every_template_has_a_synthetic_colour():
+    from wcc_sim.starflux import _spt_table, _synthetic_color_table
+
+    assert set(_spt_table()[0]) == set(_synthetic_color_table()[0])
+
+
+def test_spt_from_b_v_picks_the_nearest_template():
+    from wcc_sim.starflux import spt_from_b_v
+
+    assert spt_from_b_v(0.65)[0] == "G2V"
+    assert list(spt_from_b_v([0.0, 1.45])) == ["A0V", "M2V"]
+
+
+def test_spt_from_b_v_falls_back_to_g2v_without_a_colour():
+    """Same convention as spt_from_bp_rp, so a missing colour behaves the
+    same whichever catalog the row came from."""
+    from wcc_sim.starflux import spt_from_b_v
+
+    assert spt_from_b_v(np.nan)[0] == "G2V"
+
+
+def test_bp_rp_for_spt_round_trips_through_the_type_lookup():
+    """to_gaia_like sets BP-RP from this, so spt_from_bp_rp must return the
+    type it came from -- otherwise a merged row's rate uses another template."""
+    from wcc_sim.starflux import bp_rp_for_spt, spt_from_bp_rp
+
+    for spt in ("A0V", "G2V", "K5V", "M4V"):
+        assert spt_from_bp_rp(bp_rp_for_spt(spt))[0] == spt
