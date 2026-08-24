@@ -151,7 +151,7 @@ def render_extended(components, wcs, shape, plate_scale_mas, sensorfilter,
     `kernels` maps (template, ebv) -> native-resolution PSF kernel; the
     caller decides whether those are chromatic effective PSFs or copies of
     the monochromatic one. Kernels are normalized to unit sum here and,
-    when a WingModel is given, scaled by 1/(1 + energy_beyond(half)) so
+    when a wing model is given, scaled by 1/wing.flux_norm(half) so
     extended flux follows the same stamp-truncation convention as
     add_star. No wing halo is drawn: for smooth extended light the halo
     is a sub-noise redistribution.
@@ -173,6 +173,6 @@ def render_extended(components, wcs, shape, plate_scale_mas, sensorfilter,
         kern = np.asarray(kernels[key], dtype=np.float64)
         kern = kern / kern.sum()
         if wing is not None:
-            kern = kern / (1.0 + wing.energy_beyond(kern.shape[0] // 2))
+            kern = kern / wing.flux_norm(kern.shape[0] // 2)
         image += fftconvolve(sub, kern, mode="same").astype(np.float32)
     return image

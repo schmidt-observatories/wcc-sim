@@ -1,5 +1,7 @@
 """Place PSF stamps on the detector grid and apply the ETC noise model."""
 
+from dataclasses import dataclass
+
 import numpy as np
 from astropy import units as u
 from wcc_etc.psfsim import saturation_mask_from_image_e
@@ -16,21 +18,45 @@ def bin_oversampled(stamp_os, oversample):
     )
 
 
-def wing_blend(n_stamp, wing, blend_start=0.8):
-    """Precompute the stamp->wing crossfade for one stamp geometry.
+@dataclass(frozen=True)
+class StampBlend:
+    """Everything about one stamp geometry that does not depend on the star.
 
-    Returns (w, model): w is a cosine taper (1 in the core, 0 at r >=
-    half-width) and model is the wing profile on the stamp grid. Blending
-    the stamp's outer annulus into the smooth model removes the Airy-ring
-    texture that would otherwise end abruptly at the square stamp edge.
+    `w` is a cosine taper (1 in the core, 0 at r >= half-width) and `model`
+    is the *diffraction* wing on the stamp grid; blending the stamp's outer
+    annulus into the smooth model removes the Airy-ring texture that would
+    otherwise end abruptly at the square stamp edge. `halo` is the measured
+    scattered-light profile on the same grid, and `core_scale` the weight on
+    the diffraction term -- both inert (0 and 1) when there is no scatter
+    model, which reproduces the diffraction-only rendering exactly.
     """
+
+    w: np.ndarray
+    model: np.ndarray
+    halo: np.ndarray
+    core_scale: float
+
+
+def wing_blend(n_stamp, wing, blend_start=0.8):
+    """Precompute the stamp->wing crossfade and halo for one stamp geometry."""
     half = n_stamp // 2
     yy, xx = np.mgrid[:n_stamp, :n_stamp]
     r = np.hypot(yy - half, xx - half)
     t = np.clip((r - blend_start * half) / ((1.0 - blend_start) * half), 0.0, 1.0)
     w = 0.5 * (1.0 + np.cos(np.pi * t))
-    model = wing.profile(np.maximum(r, 1.0))
-    return w, model
+    # The scatter halo is added across the whole stamp, not crossfaded in at
+    # the edge: it is a separate additive term of the PSF, present under the
+    # core as well (where the core outruns it by ~1e9 and it does not matter).
+    core = getattr(wing, "core", wing)
+    halo_model = getattr(wing, "halo", None)
+    return StampBlend(
+        w=w,
+        model=core.profile(np.maximum(r, 1.0)),
+        halo=(
+            np.zeros_like(r) if halo_model is None else halo_model.profile(r)
+        ),
+        core_scale=1.0 if halo_model is None else 1.0 - halo_model.frac_total,
+    )
 
 
 def _add_wing_halo(image, x0, y0, half, scaled_flux, wing, floor_e):
@@ -67,9 +93,12 @@ def add_star(image, psf_os, x, y, flux_e, oversample, wing=None, floor_e=None,
     With a `wing` model (see wcc_sim.wings), the stamp's outer annulus is
     crossfaded into the smooth wing profile and the halo is continued on a
     circular footprint out to where flux_e * profile(r) < floor_e. Star flux
-    is renormalized by 1/(1 + wing energy beyond the stamp) for all stars so
-    photometry stays magnitude-independent; the sub-floor halo of faint
-    stars is simply not drawn.
+    is renormalized by `wing.flux_norm(half)` for all stars so photometry
+    stays magnitude-independent; the sub-floor halo of faint stars is simply
+    not drawn.
+
+    A CombinedWing additionally carries the measured scattered-light halo,
+    which is added across the stamp as well as beyond it.
     """
     ny, nx = image.shape
     n_stamp = psf_os.shape[0] // oversample
@@ -83,9 +112,12 @@ def add_star(image, psf_os, x, y, flux_e, oversample, wing=None, floor_e=None,
     if wing is not None:
         if blend is None:
             blend = wing_blend(n_stamp, wing)
-        w, model = blend
-        flux_e = flux_e / (1.0 + wing.energy_beyond(float(half)))
-        stamp = flux_e * (stamp * w + model * (1.0 - w))
+        flux_e = flux_e / wing.flux_norm(float(half))
+        stamp = flux_e * (
+            blend.core_scale
+            * (stamp * blend.w + blend.model * (1.0 - blend.w))
+            + blend.halo
+        )
     else:
         stamp = stamp * flux_e
 

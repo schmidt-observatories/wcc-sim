@@ -31,6 +31,19 @@ def build_parser():
                    help="PSF stamp size [detector px, odd]")
     p.add_argument("--no-wings", action="store_true",
                    help="skip the analytic PSF wing extension beyond the stamp")
+    p.add_argument("--wavelength", type=float, default=None,
+                   dest="wavelength_nm",
+                   help="wavelength for the Airy core [nm] (PSF geometry only; "
+                        "default: the sensorfilter's central wavelength)")
+    p.add_argument("--report", default=None,
+                   help="write a PDF+PNG PSF radial-profile report (Airy vs "
+                        "scattered-light terms) to this path")
+    p.add_argument("--no-scatter", action="store_true",
+                   help="skip the measured scattered-light halo (FRED stray "
+                        "light); implied by --no-wings")
+    p.add_argument("--scatter-fraction", type=float, default=None,
+                   help="instrument-wide scattered fraction (default: FRED's "
+                        "5.542e-3)")
     p.add_argument("--cache-dir", default=None, help="Gaia query cache directory")
     p.add_argument("-o", "--output", required=True, help="output FITS path")
     return p
@@ -54,6 +67,10 @@ def main(argv=None):
         shape=tuple(args.shape) if args.shape else None,
         stamp_npix=args.stamp_npix,
         wings=not args.no_wings,
+        wavelength_nm=args.wavelength_nm,
+        report=args.report,
+        scatter=not args.no_scatter,
+        scatter_fraction=args.scatter_fraction,
         cache_dir=args.cache_dir,
         write_clean=not args.no_clean,
     )
@@ -61,6 +78,7 @@ def main(argv=None):
     print(
         f"Wrote {args.output}: {field.image_adu.shape[1]}x{field.image_adu.shape[0]} px, "
         f"{field.params['n_sources']} sources, focus={field.params['focus']}w, "
+        f"scatter={'on' if field.params['scatter'] else 'off'}, "
         f"{n_sat} saturated px"
     )
     return 0

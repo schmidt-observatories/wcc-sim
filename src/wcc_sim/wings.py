@@ -9,9 +9,11 @@ defocused Huygens PSFs -- so it can be fit from the outer annulus of the
 stamp itself and evaluated directly on detector pixels, out to a per-star
 radius where it drops below the noise floor.
 
-These fits describe the diffraction wing only; scattered-light halos are
-not in the PSF models yet. When scattered-light PSFs land, replace the
-power-law fit here with the measured extended profile (same interface).
+These fits describe the diffraction wing only. The measured scattered-light
+halo lives in :mod:`wcc_sim.scatter` and is *added* to this diffraction wing
+by :class:`CombinedWing` rather than replacing it -- the two are physically
+separate terms of the same PSF, and beyond ~1000 px the scatter halo is the
+larger of them by an order of magnitude.
 """
 
 from dataclasses import dataclass
@@ -45,6 +47,15 @@ class WingModel:
         """PSF fraction integrated over the plane outside radius r."""
         return 2.0 * np.pi * self.c * r ** (self.alpha + 2.0) / (-(self.alpha + 2.0))
 
+    def flux_norm(self, r_stamp):
+        """Divide star flux by this so stamp + drawn wing integrate to 1.
+
+        The rendered stamp is normalized to sum 1, so it already claims all
+        the energy; the wing drawn beyond it is extra, and this divides it
+        back out.
+        """
+        return 1.0 + self.energy_beyond(r_stamp)
+
 
 def fit_wing_model(stamp, r_fit=(0.65, 0.98)):
     """Fit a WingModel to the outer annulus of a detector-sampled PSF stamp.
@@ -69,3 +80,78 @@ def fit_wing_model(stamp, r_fit=(0.65, 0.98)):
             "stamp outer annulus is not in the power-law wing regime"
         )
     return WingModel(c=float(np.exp(lnc)), alpha=float(alpha), r_in=float(half))
+
+
+@dataclass(frozen=True)
+class CombinedWing:
+    """Diffraction wing plus the measured scattered-light halo.
+
+    The total PSF is ``(1 - f_scat) * core + f_scat * halo`` (the convention
+    of ``wcc_etc.scatter_psf.make_total_psf``), so beyond the stamp the two
+    terms simply add: the core's fitted power law scaled down by the
+    scattered fraction, plus the halo at its absolute FRED brightness.
+
+    Exposes the same interface as :class:`WingModel`, so
+    :func:`wcc_sim.render.add_star` needs to know nothing about scatter.
+    """
+
+    core: WingModel
+    halo: object  # wcc_sim.scatter.ScatterHalo
+
+    @property
+    def core_scale(self):
+        """Weight on the diffraction term: 1 - the scattered fraction."""
+        return 1.0 - self.halo.frac_total
+
+    @property
+    def r_in(self):
+        return self.core.r_in
+
+    def profile(self, r):
+        return self.core_scale * self.core.profile(r) + self.halo.profile(r)
+
+    def energy_beyond(self, r):
+        return (
+            self.core_scale * self.core.energy_beyond(r)
+            + self.halo.energy_beyond(r)
+        )
+
+    def flux_norm(self, r_stamp):
+        """Divide star flux by this so the drawn PSF carries the right energy.
+
+        The scattered light falling outside the halo's modelled disc lands off
+        the focal plane entirely, so it is neither drawn nor folded back into
+        the star -- the target is ``1 - lost``, not 1.
+        """
+        lost = self.halo.frac_total - self.halo.energy_beyond(0.0)
+        drawn = (
+            self.core_scale * (1.0 + self.core.energy_beyond(r_stamp))
+            + self.halo.energy_beyond(0.0)
+        )
+        return drawn / (1.0 - lost)
+
+    def r_out(self, flux_e, floor_e):
+        """Radius where the summed profile falls to ``floor_e``.
+
+        Inverted on a log grid rather than analytically: the sum of a power
+        law and a tabulated profile has no closed form, and this is evaluated
+        once per star. The crossing is then interpolated between the
+        bracketing grid points -- returning the grid point itself would clip
+        the halo a fraction of a grid step early, which is a thin annulus of
+        real flux at exactly the floor.
+        """
+        if flux_e <= 0.0 or floor_e <= 0.0:
+            return float(self.r_in)
+        r_edge = float(self.halo.r_px[-1])
+        r = np.geomspace(max(float(self.r_in), 1.0), r_edge, 512)
+        p = flux_e * self.profile(r)
+        above = np.flatnonzero(p >= floor_e)
+        if above.size == 0:
+            return float(self.r_in)
+        i = int(above[-1])
+        if i + 1 >= r.size or p[i + 1] <= 0.0:
+            return max(float(r[i]), float(self.r_in))
+        # log-log interpolation of the profile between r[i] and r[i+1]
+        t = (np.log(floor_e) - np.log(p[i])) / (np.log(p[i + 1]) - np.log(p[i]))
+        r_cross = np.exp(np.log(r[i]) + t * (np.log(r[i + 1]) - np.log(r[i])))
+        return max(float(r_cross), float(self.r_in))

@@ -6,9 +6,16 @@
 set -euo pipefail
 mkdir -p smoke_out
 
+#for focus in 0 1 2; do
+#  wcc-sim --ra 291.0 --dec 44.5 --sensorfilter zwo:r --focus "$focus" \
+#          --exptime 90 --seed 42 --shape 1024 1024 \
+#          --cache-dir smoke_out/cache \
+#          -o "smoke_out/field_focus${focus}.fits"
+#done
+
 for focus in 0 1 2; do
   wcc-sim --ra 291.0 --dec 44.5 --sensorfilter zwo:r --focus "$focus" \
-          --exptime 90 --seed 42 --shape 1024 1024 \
+          --exptime 90 --seed 42 \
           --cache-dir smoke_out/cache \
           -o "smoke_out/field_focus${focus}.fits"
 done

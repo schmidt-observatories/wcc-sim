@@ -107,7 +107,6 @@ html_theme_options = {
 html_static_path = ["_static"]
 html_logo = "_static/logo_schmidt_sciences.png"
 html_title = f"wcc-sim {release}"
-html_css_files = ["custom.css"]
 
 
 # -- Copy the tutorial notebooks into the source tree at build time ----------

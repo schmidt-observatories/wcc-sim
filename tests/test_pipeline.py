@@ -38,18 +38,46 @@ def test_star_lands_at_wcs_position(canned_catalog):
     assert cy == pytest.approx(y, abs=1.0)
 
 
+def _injected_star_e(field):
+    """Total star electrons in a frame, over the uniform sky+dark level."""
+    return (field.image_clean - np.median(field.image_clean)).sum()
+
+
 def test_photometric_closure_vs_etc(canned_catalog):
-    """Total injected flux of an interior star matches the ETC rate to <1%."""
+    """Total injected flux of an interior star matches the ETC rate to <1%.
+
+    Run without the scattered-light halo: this pins the ETC -> simulation
+    flux calibration, which should not be entangled with stray light. The
+    scatter-on case is covered by the companion test below.
+    """
     from wcc_sim.starflux import rate_for_spt
 
     single = canned_catalog[[1]]  # G=15 star, 1.5" from center (interior)
-    f = run(single, add_noise=False, exptime=90.0)
-    sky_dark = np.median(f.image_clean)  # uniform background level
-    star_e = (f.image_clean - sky_dark).sum()
+    f = run(single, add_noise=False, exptime=90.0, scatter=False)
     spt = f.catalog["spt"][0]
     expected = rate_for_spt(spt, "zwo:r") * 90.0
     assert expected > 0  # guard: a zero rate would make the closure check vacuous
-    assert star_e == pytest.approx(expected, rel=0.01)
+    assert _injected_star_e(f) == pytest.approx(expected, rel=0.01)
+
+
+def test_scatter_removes_the_scattered_fraction_from_the_star(canned_catalog):
+    """With scatter on, a faint star keeps (1 - f_scat) of its flux.
+
+    The scattered light is real and leaves the core, but for a faint star the
+    halo sits below the drawing floor everywhere, so it is not deposited --
+    the frame legitimately holds ~0.55% less than the ETC total. Folding it
+    back into the core would make a star's brightness depend on the noise
+    floor.
+    """
+    from wcc_sim.scatter import halo_for_sensorfilter
+
+    single = canned_catalog[[1]]
+    on = run(single, add_noise=False, exptime=90.0)
+    off = run(single, add_noise=False, exptime=90.0, scatter=False)
+    f_scat = halo_for_sensorfilter("zwo:r").frac_total
+
+    deficit = 1.0 - _injected_star_e(on) / _injected_star_e(off)
+    assert deficit == pytest.approx(f_scat, abs=0.001)
 
 
 def test_focus_override_changes_psf(canned_catalog):

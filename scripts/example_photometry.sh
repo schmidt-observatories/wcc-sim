@@ -34,4 +34,4 @@ EOF
 wcc-phot smoke_out/series*.fits \
          --source-id "$TARGET" --n-ref 10 --method aperture \
          --lc-csv smoke_out/lightcurve.ecsv \
-         -o smoke_out/photometry.fits
+         -o smoke_out/photometry.fits --live
