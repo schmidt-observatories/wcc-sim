@@ -14,8 +14,10 @@ import warnings
 
 import numpy as np
 from astropy import units as u
-from astropy.table import Table
+from astropy.table import Table, vstack
 
+from .astrometry import crossmatch, propagate
+from .catalog import GAIA_EPOCH
 from .starflux import bp_rp_for_spt, g_minus_v, spt_from_b_v
 
 #: VizieR table: the Extended Hipparcos Compilation (Anderson & Francis 2012).
@@ -126,3 +128,76 @@ def to_gaia_like(bright):
         "spt": spt,
         "catalog": np.full(len(rows), "hipparcos"),
     })
+
+
+#: Columns the merged table carries beyond the Gaia query's own.
+_PROVENANCE = {"spt": "", "catalog": "gaia"}
+
+
+def _with_provenance(gaia):
+    """Gaia rows, plus the two columns the merged table needs.
+
+    `spt` is empty because `rates_for_catalog` reads a non-empty value as an
+    override; Gaia rows must keep deriving their type from BP-RP.
+    """
+    out = gaia.copy()
+    for name, value in _PROVENANCE.items():
+        if name not in out.colnames:
+            out[name] = np.full(len(out), value)
+    return out
+
+
+def merge(gaia, bright, epoch=None, replace_mag=6.0, match_radius_arcsec=2.0,
+          gaia_epoch=GAIA_EPOCH):
+    """Gaia plus the bright rows it is missing, all at one epoch.
+
+    Returns `(merged, info)`. Both catalogs are propagated to a common epoch
+    *before* matching: Gaia is at J2016.0 and Hipparcos at J1991.25, and a
+    3.7 arcsec/yr star is 92 arcsec from itself across that gap, so an
+    un-propagated match would add it twice.
+
+    Policy, per matched pair: brighter than `replace_mag` in G the bright row
+    replaces the Gaia one, which is where DR3's saturation systematics live;
+    fainter, Gaia wins and the duplicate is dropped. Unmatched bright rows
+    are added -- the gap-filling case. Added rows are sorted brightest-first
+    and prepended, so row 0 (the row the PSF report decomposes) is the
+    brightest star in the field.
+
+    `epoch=None` means the Gaia epoch, so Gaia positions do not move and an
+    empty bright table gives back the input catalog untouched.
+    """
+    to_epoch = float(gaia_epoch if epoch is None else
+                     (epoch.jyear if hasattr(epoch, "jyear") else epoch))
+    info = {"bright_catalog": None, "n_bright_added": 0,
+            "n_bright_replaced": 0, "epoch": to_epoch}
+
+    gaia_moved = propagate(gaia, gaia_epoch, to_epoch, parallax="parallax",
+                           rv="radial_velocity")
+    if not len(bright):
+        return _with_provenance(gaia_moved), info
+
+    rows = to_gaia_like(bright)
+    if not len(rows):
+        return _with_provenance(gaia_moved), info
+    rows = propagate(rows, XHIP_EPOCH, to_epoch, parallax="parallax",
+                     rv="radial_velocity")
+    rows.sort("phot_g_mean_mag")
+
+    idx_bright, idx_gaia = crossmatch(rows, gaia_moved, match_radius_arcsec)
+    bright_g = np.asarray(rows["phot_g_mean_mag"], dtype=float)
+    wins = bright_g[idx_bright] < float(replace_mag) if len(idx_bright) else \
+        np.array([], dtype=bool)
+
+    take_bright = np.ones(len(rows), dtype=bool)
+    take_bright[idx_bright[~wins]] = False          # matched and faint: drop
+    drop_gaia = np.zeros(len(gaia_moved), dtype=bool)
+    drop_gaia[idx_gaia[wins]] = True                # matched and bright: replace
+
+    info["bright_catalog"] = "hipparcos"
+    info["n_bright_replaced"] = int(wins.sum())
+    info["n_bright_added"] = int(take_bright.sum()) - int(wins.sum())
+    merged = vstack(
+        [rows[take_bright], _with_provenance(gaia_moved[~drop_gaia])],
+        join_type="exact",
+    )
+    return merged, info

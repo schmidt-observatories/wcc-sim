@@ -154,3 +154,122 @@ def test_to_gaia_like_falls_back_to_g2v_without_a_colour():
     rows = XHIP_ROWS.copy()
     rows["B-V"] = [np.nan, 0.9]
     assert to_gaia_like(rows)["spt"][0] == "G2V"
+
+
+# --------------------------------------------------------------------------- #
+# The merge                                                                    #
+# --------------------------------------------------------------------------- #
+
+def _gaia(*rows):
+    """A minimal Gaia-shaped table: (source_id, ra, dec, g)."""
+    return Table({
+        "source_id": np.array([r[0] for r in rows], dtype=np.int64),
+        "ra": [r[1] for r in rows],
+        "dec": [r[2] for r in rows],
+        "phot_g_mean_mag": [r[3] for r in rows],
+        "phot_bp_mean_mag": [r[3] + 0.4 for r in rows],
+        "phot_rp_mean_mag": [r[3] - 0.4 for r in rows],
+        "pmra": [0.0] * len(rows),
+        "pmdec": [0.0] * len(rows),
+        "parallax": [0.0] * len(rows),
+        "radial_velocity": [0.0] * len(rows),
+    })
+
+
+def test_merge_adds_bright_stars_gaia_does_not_have():
+    """The gap-filling case, and the whole point of the feature."""
+    from wcc_sim.brightcat import merge
+
+    gaia = _gaia((1, 219.95, -60.9, 14.3))
+    merged, info = merge(gaia, XHIP_ROWS, epoch=2000.0)
+    assert info["n_bright_added"] == 2
+    assert info["n_bright_replaced"] == 0
+    assert info["bright_catalog"] == "hipparcos"
+    assert info["epoch"] == pytest.approx(2000.0)
+    assert len(merged) == 3
+    assert list(merged["catalog"]).count("hipparcos") == 2
+
+
+def test_merge_puts_the_bright_rows_first():
+    """Row 0 is the row the PSF report decomposes, so the brightest added
+    star belongs there."""
+    from wcc_sim.brightcat import merge
+
+    merged, _ = merge(_gaia((1, 219.95, -60.9, 14.3)), XHIP_ROWS, epoch=2000.0)
+    assert merged["source_id"][0] == -71683
+    assert merged["phot_g_mean_mag"][0] < merged["phot_g_mean_mag"][1]
+
+
+def test_merge_replaces_a_matched_gaia_row_when_the_star_is_bright():
+    """Brighter than the threshold, Gaia's photometry is where the saturation
+    systematics live, so the Hipparcos row wins."""
+    from wcc_sim.brightcat import merge
+
+    # a Gaia entry at alpha Cen A's J2000 position with a nonsense magnitude
+    gaia = _gaia((1, 219.90206584, -60.83397468, 11.0))
+    merged, info = merge(gaia, XHIP_ROWS[:1], epoch=2000.0)
+    assert info["n_bright_replaced"] == 1
+    assert info["n_bright_added"] == 0
+    assert len(merged) == 1
+    assert merged["source_id"][0] == -71683
+
+
+def test_merge_keeps_the_gaia_row_for_a_faint_match():
+    """Fainter than the threshold Gaia is the better source, so the duplicate
+    is dropped rather than added twice."""
+    from wcc_sim.brightcat import merge
+
+    faint = XHIP_ROWS[:1].copy()
+    faint["Vmag"] = [8.0]
+    gaia = _gaia((1, 219.90206584, -60.83397468, 7.8))
+    merged, info = merge(gaia, faint, epoch=2000.0)
+    assert (info["n_bright_added"], info["n_bright_replaced"]) == (0, 0)
+    assert list(merged["source_id"]) == [1]
+
+
+def test_merge_propagates_before_matching():
+    """Un-propagated, alpha Cen A sits 92 arcsec from itself between the two
+    catalog epochs and would be added as a second star. With propagation the
+    same star is recognised as one."""
+    from wcc_sim.brightcat import merge
+
+    gaia = _gaia((1, 219.90206584, -60.83397468, 11.0))   # J2000 position
+    merged, info = merge(gaia, XHIP_ROWS[:1], epoch=2000.0)
+    assert info["n_bright_added"] == 0                     # matched, not added
+
+
+def test_merge_defaults_to_the_gaia_epoch():
+    """epoch=None leaves Gaia positions untouched and brings the bright rows
+    to them, so existing simulations do not move."""
+    from wcc_sim.brightcat import merge
+    from wcc_sim.catalog import GAIA_EPOCH
+
+    gaia = _gaia((1, 219.95, -60.9, 14.3))
+    merged, info = merge(gaia, XHIP_ROWS, epoch=None)
+    assert info["epoch"] == pytest.approx(GAIA_EPOCH)
+    assert merged["ra"][list(merged["source_id"]).index(1)] == \
+        pytest.approx(219.95, abs=1e-9)
+
+
+def test_merge_with_no_bright_rows_leaves_the_catalog_alone():
+    """A failed or empty bright query must not reorder or drop anything, and
+    must say so in the provenance."""
+    from wcc_sim.brightcat import _empty_table, merge
+
+    gaia = _gaia((1, 219.95, -60.9, 14.3), (2, 219.96, -60.91, 12.0))
+    merged, info = merge(gaia, _empty_table(), epoch=None)
+    assert list(merged["source_id"]) == [1, 2]
+    assert info["bright_catalog"] is None
+    assert (info["n_bright_added"], info["n_bright_replaced"]) == (0, 0)
+    assert list(merged["spt"]) == ["", ""]      # no override for Gaia rows
+
+
+def test_merge_marks_gaia_rows_with_an_empty_spt_override():
+    """rates_for_catalog treats a non-empty spt as an override; Gaia rows must
+    keep using their own BP-RP."""
+    from wcc_sim.brightcat import merge
+
+    merged, _ = merge(_gaia((1, 219.95, -60.9, 14.3)), XHIP_ROWS, epoch=2000.0)
+    by_id = dict(zip(map(int, merged["source_id"]), merged["spt"]))
+    assert by_id[1] == ""
+    assert by_id[-71683] != ""
