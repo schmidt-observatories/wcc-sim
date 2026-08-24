@@ -492,6 +492,22 @@ def test_merge_reports_a_failed_query_as_not_consulted(monkeypatch):
     assert list(merged["source_id"]) == [1]
 
 
+def test_merge_with_an_empty_gaia_table_returns_the_bright_rows_alone():
+    """The spec calls this valid: the field is the bright rows alone. It is
+    also the one shape where vstack(join_type="exact") could plausibly break,
+    since one input has no rows to take a dtype from."""
+    from wcc_sim.brightcat import merge
+
+    merged, info = merge(_gaia(), XHIP_ROWS, epoch=2000.0)
+    assert info["n_bright_added"] == 2
+    assert info["n_bright_replaced"] == 0
+    assert info["bright_catalog"] == "hipparcos"
+    assert list(merged["source_id"]) == [-71683, -71681]   # brightest first
+    assert list(merged["catalog"]) == ["hipparcos", "hipparcos"]
+    assert all(spt != "" for spt in merged["spt"])
+    assert list(merged["phot_g_mean_mag"]) == sorted(merged["phot_g_mean_mag"])
+
+
 def test_merge_marks_gaia_rows_with_an_empty_spt_override():
     """rates_for_catalog treats a non-empty spt as an override; Gaia rows must
     keep using their own BP-RP."""
