@@ -236,9 +236,13 @@ def merge(gaia, bright, epoch=None, replace_mag=6.0, match_radius_arcsec=2.0,
     Policy, per matched pair: brighter than `replace_mag` in G the bright row
     replaces the Gaia one, which is where DR3's saturation systematics live;
     fainter, Gaia wins and the duplicate is dropped. Unmatched bright rows
-    are added -- the gap-filling case. Added rows are sorted brightest-first
-    and prepended, so row 0 (the row the PSF report decomposes) is the
-    brightest star in the field.
+    are added -- the gap-filling case.
+
+    Row order is deliberately asymmetric. A *merged* table is sorted
+    brightest-first in G, so row 0 -- the row the PSF report decomposes -- is
+    the brightest star in the field whichever catalog it came from. An
+    un-supplemented table (no bright rows) is returned in its input order,
+    untouched, so every existing simulation is unchanged.
 
     `epoch=None` means the Gaia epoch, so Gaia positions do not move and an
     empty bright table gives back the input catalog untouched.
@@ -267,6 +271,8 @@ def merge(gaia, bright, epoch=None, replace_mag=6.0, match_radius_arcsec=2.0,
         return _with_provenance(gaia_moved), info
     rows = propagate(rows, XHIP_EPOCH, to_epoch, parallax="parallax",
                      rv="radial_velocity")
+    # The final table is sorted below; this sort only decides which of two
+    # equidistant bright rows claims a shared Gaia row -- the brighter one.
     rows.sort("phot_g_mean_mag")
 
     idx_bright, idx_gaia = crossmatch(rows, gaia_moved, match_radius_arcsec)
@@ -286,4 +292,8 @@ def merge(gaia, bright, epoch=None, replace_mag=6.0, match_radius_arcsec=2.0,
         [rows[take_bright], _with_provenance(gaia_moved[~drop_gaia])],
         join_type="exact",
     )
+    # Sorting the bright rows alone and prepending them would put the
+    # brightest *XHIP* row at 0, not the brightest row in the field: a G = 4
+    # Gaia star with V = 8 Hipparcos neighbours would be outranked.
+    merged.sort("phot_g_mean_mag")
     return merged, info

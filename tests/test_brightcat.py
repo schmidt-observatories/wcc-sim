@@ -383,6 +383,23 @@ def test_merge_puts_the_bright_rows_first():
     assert merged["phot_g_mean_mag"][0] < merged["phot_g_mean_mag"][1]
 
 
+def test_merge_sorts_the_whole_table_so_row_0_is_the_brightest_star():
+    """Sorting only the bright rows and prepending them makes row 0 the
+    brightest *XHIP* row, which is not the same thing. Point at a G = 4 Gaia
+    star with V = 8 Hipparcos neighbours and the PSF report would decompose
+    the V = 8 star."""
+    from wcc_sim.brightcat import merge
+
+    faint = XHIP_ROWS.copy()
+    faint["Vmag"] = [8.0, 8.5]                  # G ~ 7.8 / 8.3
+    gaia = _gaia((1, 220.10, -60.70, 4.0), (2, 220.11, -60.71, 12.0))
+    merged, info = merge(gaia, faint, epoch=2000.0)
+    assert info["n_bright_added"] == 2
+    assert merged["source_id"][0] == 1
+    assert list(merged["phot_g_mean_mag"]) == \
+        sorted(merged["phot_g_mean_mag"])
+
+
 def test_merge_replaces_a_matched_gaia_row_when_the_star_is_bright():
     """Brighter than the threshold, Gaia's photometry is where the saturation
     systematics live, so the Hipparcos row wins."""
