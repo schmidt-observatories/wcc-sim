@@ -45,11 +45,13 @@ def _empty_table():
 def _missing_columns(table):
     """The XHIP_COLUMNS `table` does not have.
 
-    `to_gaia_like` indexes these by name, so anything short of the full set
-    raises KeyError mid-simulation. Both the query and the cache check for
-    them; the two checks must stay in step (see `catalog.query_gaia` for the
-    Gaia twin -- deliberately duplicated, the signatures and cache keys
-    differ too much to share).
+    `to_gaia_like` indexes most of these by name, so a short table raises
+    KeyError mid-simulation; the whole set is required rather than just the
+    read ones, because a response or cache missing any requested column is a
+    schema change and its data is not what the rest of the module assumes.
+    Both the query and the cache check for them; the two checks must stay in
+    step (see `catalog.query_gaia` for the Gaia twin -- deliberately
+    duplicated, the signatures and cache keys differ too much to share).
     """
     return [c for c in XHIP_COLUMNS if c not in table.colnames]
 
