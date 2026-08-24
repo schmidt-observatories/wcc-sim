@@ -26,11 +26,18 @@ def as_time(epoch):
 
 
 def _column(cat, name, default):
-    """Column `name` as float with masked and non-finite entries filled."""
+    """Column `name` as float, with masked and non-finite entries replaced.
+
+    `np.asarray` on a MaskedColumn returns the data *under* the mask, so a
+    value that was never measured would be used as if it had been. Read the
+    mask itself instead.
+    """
     if name is None or name not in cat.colnames:
         return np.full(len(cat), default, dtype=float)
-    values = np.ma.masked_invalid(np.asarray(cat[name], dtype=float))
-    return np.ma.filled(values, default)
+    col = cat[name]
+    masked = np.ma.getmaskarray(np.ma.asarray(col))
+    values = np.asarray(np.ma.getdata(col), dtype=float)
+    return np.where(masked | ~np.isfinite(values), default, values)
 
 
 def propagate(cat, from_epoch, to_epoch, ra="ra", dec="dec", pmra="pmra",
@@ -49,6 +56,15 @@ def propagate(cat, from_epoch, to_epoch, ra="ra", dec="dec", pmra="pmra",
     t0, t1 = as_time(from_epoch), as_time(to_epoch)
     if abs((t1 - t0).to_value(u.yr)) < 1e-9:
         return out
+
+    # Validate structurally required columns
+    missing = [name for name in (ra, dec, pmra, pmdec)
+               if name not in out.colnames]
+    if missing:
+        raise ValueError(
+            f"Cannot propagate: missing position columns {missing}. "
+            f"Pass your catalog's column names via ra=, dec=, pmra=, pmdec= kwargs."
+        )
 
     plx = _column(out, parallax, 0.0)
     known = plx > 0.0

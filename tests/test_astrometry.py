@@ -117,6 +117,46 @@ def test_rows_without_proper_motion_stay_put():
     assert np.allclose(np.asarray(out["ra"]), np.asarray(HIP["ra"]))
 
 
+def test_masked_proper_motion_does_not_move_the_star():
+    """A MaskedColumn hides a real number under its mask, and np.asarray()
+    hands that number back. Gaia and XHIP both mark unmeasured astrometry
+    this way, so a leak here moves a star by a motion nobody measured."""
+    from astropy.table import MaskedColumn
+    from wcc_sim.astrometry import propagate
+
+    masked = HIP.copy()
+    masked["pmra"] = MaskedColumn([-3678.19, -3600.35], mask=[False, True])
+    masked["pmdec"] = MaskedColumn([481.84, 952.11], mask=[False, True])
+    out = propagate(masked, HIP_EPOCH, 2026.6)
+    assert out["ra"][1] == pytest.approx(HIP["ra"][1], abs=1e-12)
+    assert out["dec"][1] == pytest.approx(HIP["dec"][1], abs=1e-12)
+    assert abs(out["ra"][0] - HIP["ra"][0]) > 1e-4          # row 0 still moves
+
+
+def test_masked_parallax_falls_back_to_proper_motion_only():
+    from astropy.table import MaskedColumn
+    from wcc_sim.astrometry import propagate
+
+    masked = HIP.copy()
+    masked["parallax"] = MaskedColumn([742.12, 742.12], mask=[True, False])
+    out = propagate(masked, HIP_EPOCH, 2026.6, parallax="parallax",
+                    rv="radial_velocity")
+    pm_only = propagate(HIP, HIP_EPOCH, 2026.6)
+    seps = _sep_mas(out, np.column_stack([pm_only["ra"], pm_only["dec"]]))
+    assert seps[0] == pytest.approx(0.0, abs=1e-3)   # masked plx -> pm only
+    assert seps[1] > 1.0                             # real plx -> RV applies
+
+
+def test_a_missing_position_column_raises_instead_of_yielding_nan():
+    """A mistyped column name must not come back as a silently NaN position."""
+    from wcc_sim.astrometry import propagate
+
+    renamed = HIP.copy()
+    renamed.rename_column("ra", "RA")
+    with pytest.raises(ValueError, match="ra"):
+        propagate(renamed, HIP_EPOCH, 2000.0)
+
+
 # --------------------------------------------------------------------------- #
 # Cross-match                                                                  #
 # --------------------------------------------------------------------------- #
