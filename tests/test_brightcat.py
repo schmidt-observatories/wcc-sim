@@ -75,3 +75,82 @@ def test_query_bright_warns_and_degrades_when_the_service_fails(monkeypatch):
         out = bc.query_bright(219.9, -60.83, 110.0)
     assert len(out) == 0
     assert set(bc.XHIP_COLUMNS).issubset(out.colnames)
+
+
+# --------------------------------------------------------------------------- #
+# Normalization to Gaia-shaped rows                                            #
+# --------------------------------------------------------------------------- #
+
+GAIA_LIKE_COLUMNS = (
+    "source_id", "ra", "dec", "phot_g_mean_mag", "phot_bp_mean_mag",
+    "phot_rp_mean_mag", "pmra", "pmdec", "parallax", "radial_velocity",
+    "spt", "catalog",
+)
+
+
+def test_to_gaia_like_produces_the_pipeline_column_set():
+    from wcc_sim.brightcat import to_gaia_like
+
+    out = to_gaia_like(XHIP_ROWS)
+    assert set(GAIA_LIKE_COLUMNS).issubset(out.colnames)
+    assert list(out["catalog"]) == ["hipparcos", "hipparcos"]
+
+
+def test_to_gaia_like_marks_provenance_with_a_negative_source_id():
+    """A negative id cannot collide with a Gaia source_id, so a merged row's
+    origin is readable straight off the catalog."""
+    from wcc_sim.brightcat import to_gaia_like
+
+    assert list(to_gaia_like(XHIP_ROWS)["source_id"]) == [-71683, -71681]
+
+
+def test_to_gaia_like_converts_v_to_g_through_the_template():
+    """alpha Cen A: V = -0.01, B-V = 0.71 -> the template nearest that colour,
+    whose synthetic G-V is about -0.166, so G is about -0.18. The published
+    (BP-RP) colour term gives -0.15 for the same star; the 0.03 mag spread is
+    the accuracy of this path, and 3% in rate."""
+    from wcc_sim.brightcat import to_gaia_like
+
+    out = to_gaia_like(XHIP_ROWS)
+    assert out["phot_g_mean_mag"][0] == pytest.approx(-0.18, abs=0.04)
+    assert out["phot_g_mean_mag"][1] == pytest.approx(1.35 - 0.2, abs=0.1)
+
+
+def test_to_gaia_like_colours_round_trip_to_the_same_template():
+    """The BP and RP magnitudes exist only so the untouched rate path picks
+    the same template this row was built from."""
+    from wcc_sim.brightcat import to_gaia_like
+    from wcc_sim.starflux import spt_from_bp_rp
+
+    out = to_gaia_like(XHIP_ROWS)
+    recovered = spt_from_bp_rp(
+        np.asarray(out["phot_bp_mean_mag"]) - np.asarray(out["phot_rp_mean_mag"])
+    )
+    assert list(recovered) == list(out["spt"])
+
+
+def test_to_gaia_like_keeps_positions_at_the_catalog_epoch():
+    """Normalization must not move anything: propagation is the merge's job."""
+    from wcc_sim.brightcat import to_gaia_like
+
+    out = to_gaia_like(XHIP_ROWS)
+    assert out["ra"][0] == pytest.approx(219.92041034, abs=1e-8)
+
+
+def test_to_gaia_like_drops_rows_without_a_v_magnitude():
+    """No magnitude means no rate; the row would render as a zero-flux star."""
+    from wcc_sim.brightcat import to_gaia_like
+
+    rows = XHIP_ROWS.copy()
+    rows["Vmag"] = [np.nan, 1.35]
+    with pytest.warns(UserWarning, match="no V magnitude"):
+        out = to_gaia_like(rows)
+    assert list(out["source_id"]) == [-71681]
+
+
+def test_to_gaia_like_falls_back_to_g2v_without_a_colour():
+    from wcc_sim.brightcat import to_gaia_like
+
+    rows = XHIP_ROWS.copy()
+    rows["B-V"] = [np.nan, 0.9]
+    assert to_gaia_like(rows)["spt"][0] == "G2V"

@@ -16,6 +16,8 @@ import numpy as np
 from astropy import units as u
 from astropy.table import Table
 
+from .starflux import bp_rp_for_spt, g_minus_v, spt_from_b_v
+
 #: VizieR table: the Extended Hipparcos Compilation (Anderson & Francis 2012).
 XHIP_CATALOG = "V/137D/XHIP"
 
@@ -78,3 +80,49 @@ def query_bright(ra_deg, dec_deg, radius_arcsec, cache_dir=None):
     if cache_file is not None:
         out.write(cache_file, format="ascii.ecsv", overwrite=True)
     return out
+
+
+def _floats(cat, name, default=np.nan):
+    values = np.ma.masked_invalid(np.asarray(cat[name], dtype=float))
+    return np.ma.filled(values, default)
+
+
+def to_gaia_like(bright):
+    """XHIP rows as a Gaia-shaped catalog, positions still at XHIP_EPOCH.
+
+    The magnitude path is the point of this function. Hipparcos gives
+    Johnson V and B-V; the rate model is normalized in Gaia G. So: pick the
+    Pickles template whose synthetic B-V is nearest the star's, then
+    G = V + (G-V) of that template. BP and RP are set from the same
+    template's tabulated BP-RP, so `spt_from_bp_rp` independently recovers
+    the type and `rates_for_catalog` needs no change at all. No empirical
+    colour relation is involved.
+    """
+    v = _floats(bright, "Vmag")
+    keep = np.isfinite(v)
+    dropped = int((~keep).sum())
+    if dropped:
+        warnings.warn(
+            f"{dropped} bright-catalog row(s) have no V magnitude and were "
+            "dropped: without one there is no count rate",
+            UserWarning,
+        )
+    rows = bright[keep]
+    v = v[keep]
+    spt = spt_from_b_v(_floats(rows, "B-V"))
+    g = v + g_minus_v(spt)
+    bp_rp = bp_rp_for_spt(spt)
+    return Table({
+        "source_id": -np.asarray(rows["HIP"], dtype=np.int64),
+        "ra": _floats(rows, "RAJ2000"),
+        "dec": _floats(rows, "DEJ2000"),
+        "phot_g_mean_mag": g,
+        "phot_bp_mean_mag": g + 0.5 * bp_rp,
+        "phot_rp_mean_mag": g - 0.5 * bp_rp,
+        "pmra": _floats(rows, "pmRA", 0.0),
+        "pmdec": _floats(rows, "pmDE", 0.0),
+        "parallax": _floats(rows, "Plx", 0.0),
+        "radial_velocity": _floats(rows, "RV", 0.0),
+        "spt": spt,
+        "catalog": np.full(len(rows), "hipparcos"),
+    })
