@@ -59,7 +59,10 @@ def query_gaia(ra_deg, dec_deg, radius_arcsec, mag_limit=21.0, cache_dir=None):
             if set(COLUMNS).issubset(cached.colnames):
                 return cached
             # written before the astrometry columns existed: using it would
-            # contribute zero proper motion for the whole field
+            # contribute zero proper motion for the whole field.
+            # brightcat.query_bright carries the same guard for the XHIP
+            # cache; the two are deliberately duplicated (different
+            # signatures and cache keys) and must stay in step.
 
     result = _run_query(build_adql(ra_deg, dec_deg, radius_arcsec, mag_limit))
     if len(result) == 0:

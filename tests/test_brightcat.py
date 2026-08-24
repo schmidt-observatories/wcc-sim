@@ -78,6 +78,25 @@ def test_query_bright_warns_and_degrades_when_the_service_fails(monkeypatch):
     assert out.meta["bright_query_ok"] is False
 
 
+def test_query_bright_requeries_a_cache_missing_columns(patched_query, tmp_path):
+    """The guard catalog.query_gaia already has. The next time XHIP_COLUMNS
+    grows, a cache written before that would be handed back and raise
+    KeyError out of to_gaia_like mid-simulation."""
+    from wcc_sim.brightcat import query_bright
+
+    stale = XHIP_ROWS.copy()
+    del stale["RV"]
+    key = f"xhip_{219.9:.6f}_{-60.83:+.6f}_{110.0:.1f}.ecsv"
+    stale.write(tmp_path / key, format="ascii.ecsv")
+
+    out = query_bright(219.9, -60.83, 110.0, cache_dir=str(tmp_path))
+    assert len(patched_query) == 1                  # re-queried, not trusted
+    assert "RV" in out.colnames
+    # and the stale file is overwritten, so it self-heals
+    from astropy.table import Table as _Table
+    assert "RV" in _Table.read(tmp_path / key, format="ascii.ecsv").colnames
+
+
 def test_query_bright_degrades_on_a_malformed_response(monkeypatch):
     """The deliberately broad `except` covers only the network call. A VizieR
     schema surprise -- a column simply absent from the response -- would sail

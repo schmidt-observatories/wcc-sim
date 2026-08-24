@@ -92,8 +92,11 @@ def query_bright(ra_deg, dec_deg, radius_arcsec, cache_dir=None):
         cache_file = os.path.join(cache_dir, key + ".ecsv")
         if os.path.exists(cache_file):
             cached = Table.read(cache_file, format="ascii.ecsv")
-            cached.meta["bright_query_ok"] = True
-            return cached
+            if not _missing_columns(cached):
+                cached.meta["bright_query_ok"] = True
+                return cached
+            # written before XHIP_COLUMNS last grew: using it would raise
+            # KeyError out of to_gaia_like. Re-query and overwrite instead.
     try:
         out = _run_query(ra_deg, dec_deg, radius_arcsec)
     except Exception as exc:  # network, service, or VOTable parse failure
