@@ -13,6 +13,10 @@ COLUMNS = [
     "phot_g_mean_mag",
     "phot_bp_mean_mag",
     "phot_rp_mean_mag",
+    "pmra",
+    "pmdec",
+    "parallax",
+    "radial_velocity",
 ]
 
 #: Reference epoch of Gaia DR3 positions (Julian year).
@@ -51,7 +55,11 @@ def query_gaia(ra_deg, dec_deg, radius_arcsec, mag_limit=21.0, cache_dir=None):
         key = f"gaia_{ra_deg:.6f}_{dec_deg:+.6f}_{radius_arcsec:.1f}_{mag_limit:.2f}"
         cache_file = os.path.join(cache_dir, key + ".ecsv")
         if os.path.exists(cache_file):
-            return Table.read(cache_file, format="ascii.ecsv")
+            cached = Table.read(cache_file, format="ascii.ecsv")
+            if set(COLUMNS).issubset(cached.colnames):
+                return cached
+            # written before the astrometry columns existed: using it would
+            # contribute zero proper motion for the whole field
 
     result = _run_query(build_adql(ra_deg, dec_deg, radius_arcsec, mag_limit))
     if len(result) == 0:
