@@ -18,7 +18,7 @@ from astropy.table import Table, vstack
 
 from .astrometry import crossmatch, propagate
 from .catalog import GAIA_EPOCH
-from .starflux import bp_rp_for_spt, g_minus_v, spt_from_b_v
+from .starflux import bp_rp_for_spt, g_minus_v_at_b_v, spt_from_b_v
 
 #: VizieR table: the Extended Hipparcos Compilation (Anderson & Francis 2012).
 XHIP_CATALOG = "V/137D/XHIP"
@@ -145,11 +145,18 @@ def to_gaia_like(bright):
 
     The magnitude path is the point of this function. Hipparcos gives
     Johnson V and B-V; the rate model is normalized in Gaia G. So: pick the
-    Pickles template whose synthetic B-V is nearest the star's, then
-    G = V + (G-V) of that template. BP and RP are set from the same
-    template's tabulated BP-RP, so `spt_from_bp_rp` independently recovers
-    the type and `rates_for_catalog` needs no change at all. No empirical
-    colour relation is involved.
+    Pickles template whose synthetic B-V is nearest the star's for the SED,
+    and set G = V + (G-V) interpolated at the star's own B-V. The
+    interpolation matters: the nearest template's own G-V would make G a
+    step function of colour, 0.55 mag across the M2V/M4V boundary for a
+    0.015 mag change in B-V. BP and RP are set from the chosen template's
+    tabulated BP-RP, so `spt_from_bp_rp` independently recovers the type and
+    `rates_for_catalog` needs no change at all. No empirical colour relation
+    is involved.
+
+    The template set is dwarfs-only, so a giant is assigned a dwarf's G-V:
+    Aldebaran (K5III) comes out roughly 0.5-1 mag too bright. See the spec's
+    "Out of scope".
 
     Rows without a usable V magnitude or a finite position are dropped with
     a warning, one per reason.
@@ -177,8 +184,12 @@ def to_gaia_like(bright):
             )
     rows = bright[keep]
     v = v[keep]
-    spt = spt_from_b_v(_floats(rows, "B-V"))
-    g = v + g_minus_v(spt)
+    b_v = _floats(rows, "B-V")
+    spt = spt_from_b_v(b_v)
+    # The template sets the SED; the *magnitude* conversion is interpolated
+    # in the star's own colour. Using the chosen template's own G-V would
+    # make G a step function of B-V -- 0.55 mag across the M2V/M4V boundary.
+    g = v + g_minus_v_at_b_v(b_v)
     bp_rp = bp_rp_for_spt(spt)
     return Table({
         "source_id": -np.asarray(rows["HIP"], dtype=np.int64),

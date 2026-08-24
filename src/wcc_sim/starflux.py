@@ -99,6 +99,44 @@ def g_minus_v(spt):
     return _by_spt(_synthetic_color_table()[2], spt)
 
 
+@lru_cache(maxsize=1)
+def _g_v_vs_b_v():
+    """(B-V, G-V) sorted in B-V, for interpolation.
+
+    The synthetic sequence is not monotonic in colour -- O9V (-0.3218) sits
+    redward of B0V (-0.3323), M0V (1.3458) blueward of K7V (1.3937) -- so
+    np.interp on the table order would return nonsense there.
+    """
+    _, b_v, g_v = _synthetic_color_table()
+    order = np.argsort(b_v)
+    return b_v[order], g_v[order]
+
+
+def g_minus_v_at_b_v(b_v):
+    """Synthetic Gaia G - Johnson V interpolated in B-V.
+
+    Taking the nearest template's G-V makes the derived G a step function of
+    colour: between M2V (B-V 1.461, G-V -0.859) and M4V (1.618, -1.408) it
+    jumps 0.55 mag at the midpoint, well inside Hipparcos's own B-V error for
+    a red star. The template still sets the SED; only this conversion is
+    interpolated. NaN colour falls back to the G2V entry, matching
+    spt_from_b_v's own fallback.
+
+    Colours outside the tabulated range are clamped to the end templates
+    (np.interp's default), which is the right behaviour: extrapolating a
+    colour-colour sequence off its end is worse than saturating it.
+    """
+    colors, values = _g_v_vs_b_v()
+    b_v = np.atleast_1d(
+        np.ma.filled(np.ma.masked_invalid(np.asarray(b_v, dtype=float)), np.nan)
+    )
+    out = np.full(b_v.shape, g_minus_v("G2V")[0], dtype=float)
+    ok = np.isfinite(b_v)
+    if ok.any():
+        out[ok] = np.interp(b_v[ok], colors, values)
+    return out
+
+
 def bp_rp_for_spt(spt):
     """The BP-RP that spt_from_bp_rp maps back to this type."""
     spts, colors = _spt_table()

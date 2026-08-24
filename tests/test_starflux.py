@@ -138,6 +138,65 @@ def test_spt_from_b_v_picks_the_nearest_template():
     assert list(spt_from_b_v([0.0, 1.45])) == ["A0V", "M2V"]
 
 
+def test_g_minus_v_at_b_v_is_continuous_in_colour():
+    """The bug this pins. Taking the *nearest template's* G-V makes the
+    derived magnitude a step function of colour: between M2V (B-V 1.461,
+    G-V -0.859) and M4V (1.618, -1.408) it jumps 0.549 mag at the midpoint,
+    a factor 1.66 in rendered flux, for a 0.015 mag change in B-V -- inside
+    Hipparcos's own B-V error for a red star, and enough to flip the
+    replace_mag = 6.0 decision."""
+    import numpy as np
+
+    from wcc_sim.starflux import _synthetic_color_table, g_minus_v_at_b_v
+
+    _, b_v, _ = _synthetic_color_table()
+    grid = np.arange(b_v.min() - 0.1, b_v.max() + 0.1, 0.001)
+    values = g_minus_v_at_b_v(grid)
+    window = 20                                   # 0.001 mag steps -> 0.02
+    jump = np.max(np.abs(values[window:] - values[:-window]))
+    assert jump < 0.1, f"0.02 mag in B-V moves G-V by {jump:.3f} mag"
+
+
+def test_g_minus_v_at_b_v_matches_the_table_at_a_tabulated_colour():
+    """Interpolation must not shift the anchors: at a template's own colour
+    the interpolated value is that template's."""
+    from wcc_sim.starflux import g_minus_v, g_minus_v_at_b_v
+
+    assert g_minus_v_at_b_v(0.6502)[0] == pytest.approx(g_minus_v("G2V")[0],
+                                                        abs=1e-6)
+
+
+def test_g_minus_v_at_b_v_clamps_outside_the_table():
+    """A colour redder or bluer than any template gets the end value rather
+    than an extrapolation off the end of the sequence."""
+    from wcc_sim.starflux import g_minus_v, g_minus_v_at_b_v
+
+    assert g_minus_v_at_b_v(5.0)[0] == pytest.approx(g_minus_v("M5V")[0])
+    assert g_minus_v_at_b_v(-5.0)[0] == pytest.approx(g_minus_v("O5V")[0])
+
+
+def test_g_minus_v_at_b_v_falls_back_to_g2v_without_a_colour():
+    """Matching spt_from_b_v's own NaN fallback, so a colourless row is
+    treated as solar by both halves of the conversion."""
+    import numpy as np
+
+    from wcc_sim.starflux import g_minus_v, g_minus_v_at_b_v
+
+    assert g_minus_v_at_b_v(np.nan)[0] == pytest.approx(g_minus_v("G2V")[0])
+
+
+def test_g_minus_v_at_b_v_is_not_confused_by_the_non_monotonic_sequence():
+    """The synthetic sequence is not sorted in B-V: O9V (-0.322) sits redward
+    of B0V (-0.332), and M0V (1.346) blueward of K7V (1.394). np.interp on the
+    unsorted table would return nonsense there."""
+    from wcc_sim.starflux import g_minus_v, g_minus_v_at_b_v
+
+    assert g_minus_v_at_b_v(-0.3218)[0] == pytest.approx(g_minus_v("O9V")[0],
+                                                         abs=1e-6)
+    assert g_minus_v_at_b_v(1.3937)[0] == pytest.approx(g_minus_v("K7V")[0],
+                                                        abs=1e-6)
+
+
 def test_spt_from_b_v_falls_back_to_g2v_without_a_colour():
     """Same convention as spt_from_bp_rp, so a missing colour behaves the
     same whichever catalog the row came from."""

@@ -187,6 +187,30 @@ def test_to_gaia_like_converts_v_to_g_through_the_template():
     assert out["phot_g_mean_mag"][1] == pytest.approx(1.35 - 0.2, abs=0.1)
 
 
+def test_to_gaia_like_derives_g_continuously_in_colour():
+    """The magnitude conversion must be interpolated, not stepped. Two red
+    stars 0.015 mag apart in B-V straddle the M2V/M4V boundary; with the
+    nearest template's G-V their derived G differed by 0.55 mag -- a factor
+    1.66 in rendered flux -- for the same V."""
+    from wcc_sim.brightcat import to_gaia_like
+
+    rows = XHIP_ROWS.copy()
+    rows["Vmag"] = [6.0, 6.0]
+    rows["B-V"] = [1.530, 1.545]
+    g = to_gaia_like(rows)["phot_g_mean_mag"]
+    assert abs(g[0] - g[1]) < 0.1
+
+
+def test_to_gaia_like_still_picks_the_discrete_template_for_the_sed():
+    """Only the magnitude is interpolated: the SED, and so the BP/RP
+    round-trip, still comes from the nearest template."""
+    from wcc_sim.brightcat import to_gaia_like
+
+    rows = XHIP_ROWS.copy()
+    rows["B-V"] = [1.530, 1.545]
+    assert list(to_gaia_like(rows)["spt"]) == ["M2V", "M4V"]
+
+
 def test_to_gaia_like_colours_round_trip_to_the_same_template():
     """The BP and RP magnitudes exist only so the untouched rate path picks
     the same template this row was built from."""
