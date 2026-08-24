@@ -7,7 +7,7 @@ real XHIP values for alpha Cen A and B.
 
 import numpy as np
 import pytest
-from astropy.table import Table
+from astropy.table import MaskedColumn, Table
 
 #: XHIP V/137D rows for HIP 71683 / 71681. Positions are epoch J1991.25
 #: despite the RAJ2000 column name.
@@ -154,6 +154,49 @@ def test_to_gaia_like_falls_back_to_g2v_without_a_colour():
     rows = XHIP_ROWS.copy()
     rows["B-V"] = [np.nan, 0.9]
     assert to_gaia_like(rows)["spt"][0] == "G2V"
+
+
+def test_masked_v_magnitude_is_dropped_after_a_cache_round_trip(tmp_path):
+    """The cache is ECSV, and astropy reads a masked float back with 0.0 under
+    the mask. A star with no measured V would come back as V = 0.0 -- a
+    spurious first-magnitude star -- unless the mask itself is read."""
+    from wcc_sim.brightcat import to_gaia_like
+
+    rows = XHIP_ROWS.copy()
+    rows["Vmag"] = MaskedColumn([-0.01, 8.0], mask=[False, True])
+    path = tmp_path / "xhip.ecsv"
+    rows.write(path, format="ascii.ecsv")
+    back = Table.read(path, format="ascii.ecsv")
+
+    with pytest.warns(UserWarning, match="no V magnitude"):
+        out = to_gaia_like(back)
+    assert list(out["source_id"]) == [-71683]
+
+
+def test_masked_colour_falls_back_to_g2v_after_a_cache_round_trip(tmp_path):
+    """A masked B-V read back as 0.0 would select A0V, not the documented
+    G2V fallback -- the star would be rendered with the wrong spectrum."""
+    from wcc_sim.brightcat import to_gaia_like
+
+    rows = XHIP_ROWS.copy()
+    rows["B-V"] = MaskedColumn([0.710, 0.900], mask=[True, False])
+    path = tmp_path / "xhip_colour.ecsv"
+    rows.write(path, format="ascii.ecsv")
+    back = Table.read(path, format="ascii.ecsv")
+
+    assert to_gaia_like(back)["spt"][0] == "G2V"
+
+
+def test_masked_columns_are_honoured_without_a_round_trip():
+    """The in-memory case too: np.asarray on a MaskedColumn returns the value
+    under the mask, whatever that value happens to be."""
+    from wcc_sim.brightcat import to_gaia_like
+
+    rows = XHIP_ROWS.copy()
+    rows["Vmag"] = MaskedColumn([-0.01, 8.0], mask=[False, True])
+    with pytest.warns(UserWarning, match="no V magnitude"):
+        out = to_gaia_like(rows)
+    assert list(out["source_id"]) == [-71683]
 
 
 # --------------------------------------------------------------------------- #

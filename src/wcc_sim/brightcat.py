@@ -85,8 +85,16 @@ def query_bright(ra_deg, dec_deg, radius_arcsec, cache_dir=None):
 
 
 def _floats(cat, name, default=np.nan):
-    values = np.ma.masked_invalid(np.asarray(cat[name], dtype=float))
-    return np.ma.filled(values, default)
+    """Column `name` as float, with masked and non-finite entries replaced.
+
+    `np.asarray` on a MaskedColumn returns the data *under* the mask -- 0.0
+    for a value astropy read back from the ECSV cache -- so a magnitude that
+    was never measured would be used as if it had been. Read the mask itself.
+    """
+    col = cat[name]
+    masked = np.ma.getmaskarray(np.ma.asarray(col))
+    values = np.asarray(np.ma.getdata(col), dtype=float)
+    return np.where(masked | ~np.isfinite(values), default, values)
 
 
 def to_gaia_like(bright):
