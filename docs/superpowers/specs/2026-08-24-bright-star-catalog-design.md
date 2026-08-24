@@ -137,7 +137,7 @@ Rejected:
   heterogeneous (`A0Vn`, `F5IV-V`, `M2Iab`), and the Pickles set wired up
   here is dwarfs-only, so most non-dwarf strings would fall back anyway.
 
-### Merge: cross-match, Hipparcos wins brighter than V = 6
+### Merge: cross-match, Hipparcos wins brighter than G = 6
 
 Hipparcos is complete to V ~ 7.3 and Gaia is sound for G > 6, so most
 Hipparcos rows in a field duplicate a Gaia row. After propagating both to
@@ -264,8 +264,8 @@ HIP 71681/71683 values from this spec.
 - Dropping RV from that same propagation moves the star by 4-5 mas at
   J2000 and ~75 mas at J2026.6, confirming the RV path is wired in.
 - `crossmatch` respects the radius and the one-to-one constraint.
-- The three merge branches: unmatched added, matched V < 6 replaced,
-  matched V >= 6 kept, with the provenance counts asserted.
+- The three merge branches: unmatched added, matched G < 6 replaced,
+  matched G >= 6 kept, with the provenance counts asserted.
 - Synthetic G-V for the G2V template is ~ -0.14, and alpha Cen A's row comes
   out at G ~ -0.15, both against published values.
 - A `_run_query` that raises produces a warning, a Gaia-only catalog, and
