@@ -64,8 +64,19 @@ autodoc_default_options = {
     "show-inheritance": True,
 }
 # wcc_sim imports wcc_etc (not on PyPI), astroquery, and synphot at module
-# scope. Building in the py313 env has all of them; mock nothing by default.
+# scope. A local build in the py313 env has all of them and mocks nothing; on
+# Read the Docs wcc_etc cannot be installed, so autodoc would fail to import
+# every module that touches it. Mock exactly what is missing, so the local
+# build stays fully real and the hosted one still renders the docstrings.
 autodoc_mock_imports = []
+for _optional in ("wcc_etc", "astroquery", "synphot", "photutils",
+                  "dust_extinction"):
+    try:
+        __import__(_optional)
+    except ImportError:
+        autodoc_mock_imports.append(_optional)
+if autodoc_mock_imports:
+    print(f"conf.py: mocking unavailable imports {autodoc_mock_imports}")
 
 # -- napoleon ----------------------------------------------------------------
 napoleon_numpy_docstring = True
