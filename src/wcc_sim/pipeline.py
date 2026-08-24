@@ -19,9 +19,15 @@ from .render import (
     render_scene,
     star_saturated,
 )
+from .scatter import halo_for_sensorfilter
 from .starflux import rates_for_catalog, sky_and_dark_rates
 from .wcsutil import build_wcs
-from .wings import fit_wing_model
+from .wings import CombinedWing, fit_wing_model
+
+
+def _core_wing(wing):
+    """The diffraction term of a wing model, whether or not scatter is on."""
+    return getattr(wing, "core", wing)
 
 
 @dataclass
@@ -33,6 +39,9 @@ class SimulatedField:
     wcs: WCS
     catalog: Table
     params: dict = field(default_factory=dict)
+    #: PSF ingredients kept for diagnostics (see wcc_sim.psfreport); not
+    #: written to FITS.
+    models: dict = field(default_factory=dict, repr=False)
 
     def to_hdulist(self, write_clean=True):
         return build_hdulist(
@@ -66,8 +75,12 @@ def simulate_field(
     stamp_npix=None,
     oversample=11,
     wings=True,
+    wavelength_nm=None,
+    scatter=True,
+    scatter_fraction=None,
     cache_dir=None,
     write_clean=True,
+    report=None,
     extended_sources=None,
     chromatic=False,
 ):
@@ -79,6 +92,26 @@ def simulate_field(
     PSFs beyond the finite stamp with an analytic power-law wing (see
     wcc_sim.wings) so truncation stays below 0.1 sigma of the background
     noise instead of printing square "postage stamp" edges.
+
+    `scatter=True` (default) adds the measured scattered-light halo from the
+    FRED stray-light model (see wcc_sim.scatter) as a second additive PSF
+    term, reaching ~37,000 px -- past the chip diagonal, so bright-star
+    contamination of faint neighbours is modelled everywhere on the array.
+    Beyond ~1000 px it exceeds the diffraction wing by an order of magnitude.
+    `scatter_fraction` overrides the instrument-wide scattered fraction
+    (default: FRED's own 5.542e-3). The halo is drawn by the wing machinery,
+    so `wings=False` turns it off as well; `params["scatter"]` reports what
+    actually ran.
+
+    `wavelength_nm` overrides the wavelength the Airy core is computed at
+    (default: the sensorfilter's central wavelength). It sets PSF *geometry*
+    only -- the synthetic photometry still uses the sensorfilter's bandpass,
+    so the star's electron rate is unchanged. Use it to put the core at the
+    450 nm of the FRED stray-light run. Ignored for focus != 0, which uses
+    fixed Huygens images.
+
+    `report=path` writes a PDF+PNG showing the PSF's radial profile split
+    into its Airy and scattered-light terms (see wcc_sim.psfreport).
 
     `extended_sources` (list of wcc_sim.extended.SersicComponent) adds
     smooth analytic components, rendered at native resolution and
@@ -129,13 +162,27 @@ def simulate_field(
         oversample=oversample,
         stamp_npix=n_stamp,
         jitter_sigma_mas=jitter_sigma_mas,
+        wavelength_m=None if wavelength_nm is None else float(wavelength_nm) * 1e-9,
+    )
+    psf_wavelength_nm = (
+        float(sim.sensor.wavelength.to("nm").value)
+        if wavelength_nm is None
+        else float(wavelength_nm)
     )
 
     sky, dark = sky_and_dark_rates(sim)
     wing = None
     wing_floor_e = None
+    halo = None
+    scatter_active = bool(scatter) and bool(wings)
+    if scatter_active:
+        halo = halo_for_sensorfilter(
+            sensorfilter, frac_total=scatter_fraction, sim=sim
+        )
     if wings:
         wing = fit_wing_model(bin_oversampled(psf_os, oversample))
+        if halo is not None:
+            wing = CombinedWing(core=wing, halo=halo)
         read_noise = float(sim.sensor.read_noise.value)
         sigma_floor = np.sqrt(
             (sky + dark) * exptime + max(int(n_reads), 1) * read_noise**2
@@ -145,7 +192,10 @@ def simulate_field(
     chromatic_active = bool(chromatic) and focus == 0
 
     def _wing_for(psf):
-        return fit_wing_model(bin_oversampled(psf, oversample)) if wings else None
+        if not wings:
+            return None
+        core = fit_wing_model(bin_oversampled(psf, oversample))
+        return core if halo is None else CombinedWing(core=core, halo=halo)
 
     if chromatic_active and len(catalog):
         image_sources = np.zeros(shape, dtype=np.float32)
@@ -225,14 +275,31 @@ def simulate_field(
         "seed": seed,
         "gaia_radius_arcsec": float(radius_arcsec),
         "n_sources": int(len(catalog)),
+        "nx": int(nx),
+        "ny": int(ny),
+        "n_pixels": int(nx) * int(ny),
+        "stamp_npix": int(n_stamp),
+        "oversample": int(oversample),
+        "add_noise": bool(add_noise),
+        "pixel_size_um": float(geom.pixel_size_um),
         "plate_scale_mas": float(geom.plate_scale_mas),
         "gain": float(sim.sensor.gain.to(u.electron / u.ct).value),
         "read_noise": float(sim.sensor.read_noise.value),
         "dark_e_s": dark,
         "sky_e_s": sky,
         "wings": bool(wings),
-        "wing_alpha": float(wing.alpha) if wing is not None else None,
-        "wing_c": float(wing.c) if wing is not None else None,
+        "scatter": scatter_active,
+        "scatter_fraction": (
+            float(halo.frac_total) if halo is not None else None
+        ),
+        "scatter_file": (
+            str(halo.meta.get("SCATFILE")) if halo is not None else None
+        ),
+        "scatter_reach_px": (
+            float(halo.r_px[-1]) if halo is not None else None
+        ),
+        "wing_alpha": float(_core_wing(wing).alpha) if wing is not None else None,
+        "wing_c": float(_core_wing(wing).c) if wing is not None else None,
         "wing_floor_e": (
             float(wing_floor_e) if wing_floor_e is not None else None
         ),
@@ -243,6 +310,7 @@ def simulate_field(
         ),
         "chromatic": bool(chromatic),
         "n_extended": len(extended_sources) if extended_sources else 0,
+        "wavelength_nm": psf_wavelength_nm,
     }
 
     result = SimulatedField(
@@ -253,7 +321,22 @@ def simulate_field(
         wcs=wcs,
         catalog=catalog,
         params=params,
+        models={
+            "wing": wing,
+            "halo": halo,
+            "stamp": bin_oversampled(psf_os, oversample),
+            "stamp_npix": int(n_stamp),
+            "wing_floor_e": wing_floor_e,
+            "sky_dark_e": (sky + dark) * exptime,
+            "pixel_size_um": geom.pixel_size_um,
+            "diameter_m": float(sim.telescope.diameter_primary.to("m").value),
+            "f_num": float(sim.telescope.f_num),
+        },
     )
     if output is not None:
         result.write(output, write_clean=write_clean)
+    if report is not None:
+        from .psfreport import make_psf_report
+
+        make_psf_report(result, report)
     return result

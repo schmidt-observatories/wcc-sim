@@ -37,7 +37,7 @@ docs = [
 where = ["src"]
 
 [tool.setuptools.package-data]
-wcc_sim = ["data/*"]
+wcc_sim = ["data/*", "data/psfs/*.ecsv"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
