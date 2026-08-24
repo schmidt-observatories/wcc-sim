@@ -148,6 +148,37 @@ def test_to_gaia_like_drops_rows_without_a_v_magnitude():
     assert list(out["source_id"]) == [-71681]
 
 
+def test_to_gaia_like_drops_rows_without_a_finite_position():
+    """A non-finite RA/Dec reaches match_to_catalog_sky, which raises
+    "Matching coordinates cannot contain NaN entries" -- one bad row would
+    take down a whole simulation in a module whose contract is that a
+    bright-catalog failure is never fatal."""
+    from wcc_sim.brightcat import to_gaia_like
+
+    rows = XHIP_ROWS.copy()
+    rows["RAJ2000"] = [np.nan, 219.91412833]
+    with pytest.warns(UserWarning, match="no usable position"):
+        out = to_gaia_like(rows)
+    assert list(out["source_id"]) == [-71681]
+
+
+def test_to_gaia_like_drops_a_masked_position_after_a_cache_round_trip(tmp_path):
+    """The masked-column case: a masked DEJ2000 read back as 0.0 would place
+    the star on the celestial equator instead of dropping it."""
+    from wcc_sim.brightcat import to_gaia_like
+
+    rows = XHIP_ROWS.copy()
+    rows["DEJ2000"] = MaskedColumn([-60.83514707, -60.83947139],
+                                   mask=[False, True])
+    path = tmp_path / "xhip_pos.ecsv"
+    rows.write(path, format="ascii.ecsv")
+    back = Table.read(path, format="ascii.ecsv")
+
+    with pytest.warns(UserWarning, match="no usable position"):
+        out = to_gaia_like(back)
+    assert list(out["source_id"]) == [-71683]
+
+
 def test_to_gaia_like_falls_back_to_g2v_without_a_colour():
     from wcc_sim.brightcat import to_gaia_like
 
@@ -231,6 +262,20 @@ def test_merge_adds_bright_stars_gaia_does_not_have():
     assert info["epoch"] == pytest.approx(2000.0)
     assert len(merged) == 3
     assert list(merged["catalog"]).count("hipparcos") == 2
+
+
+def test_merge_completes_when_a_bright_row_has_no_position():
+    """The failure this guards: the NaN row used to reach crossmatch and
+    raise, so the merge -- and the simulation -- died."""
+    from wcc_sim.brightcat import merge
+
+    rows = XHIP_ROWS.copy()
+    rows["RAJ2000"] = [np.nan, 219.91412833]
+    with pytest.warns(UserWarning, match="no usable position"):
+        merged, info = merge(_gaia((1, 219.95, -60.9, 14.3)), rows,
+                             epoch=2000.0)
+    assert info["n_bright_added"] == 1
+    assert len(merged) == 2
 
 
 def test_merge_puts_the_bright_rows_first():

@@ -107,16 +107,31 @@ def to_gaia_like(bright):
     template's tabulated BP-RP, so `spt_from_bp_rp` independently recovers
     the type and `rates_for_catalog` needs no change at all. No empirical
     colour relation is involved.
+
+    Rows without a usable V magnitude or a finite position are dropped with
+    a warning, one per reason.
     """
     v = _floats(bright, "Vmag")
-    keep = np.isfinite(v)
-    dropped = int((~keep).sum())
-    if dropped:
-        warnings.warn(
-            f"{dropped} bright-catalog row(s) have no V magnitude and were "
-            "dropped: without one there is no count rate",
-            UserWarning,
-        )
+    ra = _floats(bright, "RAJ2000")
+    dec = _floats(bright, "DEJ2000")
+    # A non-finite position is not merely a useless row: it reaches
+    # crossmatch -> match_to_catalog_sky, which raises "Matching coordinates
+    # cannot contain NaN entries" instead of skipping it, so one bad row
+    # would take down a run this module promises never to break.
+    reasons = (
+        (~np.isfinite(v),
+         "no V magnitude: without one there is no count rate"),
+        (~np.isfinite(ra) | ~np.isfinite(dec),
+         "no usable position: a non-finite RA/Dec cannot be cross-matched"),
+    )
+    keep = np.ones(len(bright), dtype=bool)
+    for bad, why in reasons:
+        keep &= ~bad
+        if bad.any():
+            warnings.warn(
+                f"{int(bad.sum())} bright-catalog row(s) have {why}; dropped",
+                UserWarning,
+            )
     rows = bright[keep]
     v = v[keep]
     spt = spt_from_b_v(_floats(rows, "B-V"))
@@ -124,8 +139,8 @@ def to_gaia_like(bright):
     bp_rp = bp_rp_for_spt(spt)
     return Table({
         "source_id": -np.asarray(rows["HIP"], dtype=np.int64),
-        "ra": _floats(rows, "RAJ2000"),
-        "dec": _floats(rows, "DEJ2000"),
+        "ra": ra[keep],
+        "dec": dec[keep],
         "phot_g_mean_mag": g,
         "phot_bp_mean_mag": g + 0.5 * bp_rp,
         "phot_rp_mean_mag": g - 0.5 * bp_rp,
