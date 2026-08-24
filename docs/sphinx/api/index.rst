@@ -25,10 +25,14 @@ Modules
 
    pipeline
    catalog
+   brightcat
+   astrometry
    starflux
    psf
+   chromatic
    wings
    render
+   extended
    detectors
    wcsutil
    fitswriter
