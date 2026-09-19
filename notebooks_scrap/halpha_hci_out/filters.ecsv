@@ -1,0 +1,16 @@
+# %ECSV 1.0
+# ---
+# datatype:
+# - {name: filter, datatype: string}
+# - {name: eqw_nm, datatype: float64, format: '%.2f'}
+# - {name: star_e_s, datatype: float64, format: '%.4g'}
+# - {name: line_1e16_e_s, datatype: float64, format: '%.3f'}
+# - {name: contrast_1e16, datatype: float64, format: '%.2e'}
+# - {name: sky_e_s_px, datatype: float64, format: '%.2e'}
+# - {name: t_frame_s, datatype: float64, format: '%.2f'}
+# - {name: frames_per_hour, datatype: float64, format: '%.0f'}
+# schema: astropy-2.0
+filter eqw_nm star_e_s line_1e16_e_s contrast_1e16 sky_e_s_px t_frame_s frames_per_hour
+"H-alpha 2 nm" 2.000149716483004 11222.340656631932 0.8698754992448502 7.751284031204224e-05 0.00015686779323512425 8.301588120064864 433.651964893179
+"H-alpha 6 nm" 5.969506644180164 34503.68662808964 0.8699924346793262 2.521447763124131e-05 0.000487251626142292 2.699725550330477 1333.468877812161
+"H-alpha 20 nm" 19.375266857992237 112479.91362365524 0.8700254341499426 7.734940453999164e-06 0.001676708743921632 0.8278207880920939 4348.767331993486
