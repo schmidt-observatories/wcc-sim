@@ -219,28 +219,166 @@ def contrast_curve(inst, jitter_mas, strehl, sep_mas, total_time_s, r_ap_px=(1.0
     return out
 
 
-def mismatch_floor(inst, jitter_sci, jitter_ref, strehl_sci, strehl_ref, sep_mas, r_ap_px=1.5, halo_k=HALO_K,
-                   snr=5.0, window_mas=None, n_window=7):
-    """Contrast floor from subtracting a reference PSF with different jitter/Strehl.
+# ------------------------------------------------- pupil-plane wavefront PSF --
 
-    Residual = |PSF_sci - PSF_ref| summed in the aperture; the planet must exceed
-    `snr` times that residual. A pure PSF-shape quantity: independent of star
-    brightness and exposure time. The residual of smeared Airy rings changes sign
-    across a ring, so at a single separation it can pass through zero; the floor
-    is therefore the RMS of the residual over n_window separations spanning
-    +/- window_mas/2 (default: one Airy FWHM) around each requested separation.
+from scipy.ndimage import gaussian_filter, shift as nd_shift
+
+
+class WfePSF:
+    """PSF from an unobscured circular pupil with a phase screen, on the fine grid.
+
+    The FFT size is chosen so that one lambda/D spans the same number of fine
+    pixels as in the ETC's Airy rendering, so these PSFs drop into
+    :func:`aperture_fractions` unchanged. Phase screens are in nm of wavefront.
+    Tip/tilt is projected out of every screen (registration is treated
+    separately). The pupil edge is anti-aliased by 4x supersampling.
+    """
+
+    def __init__(self, inst, n_pup=128, stamp_npix=STAMP_NPIX, seed=0):
+        self.inst = inst
+        self.n_pup = n_pup
+        fine_plate_mas = inst.plate_mas / OVERSAMPLE
+        lam_over_d_mas = inst.wavelength_m / inst.diameter_m * 206264.806e3
+        self.n_fft = int(round(lam_over_d_mas / fine_plate_mas * n_pup))
+        self.n_fine = stamp_npix * OVERSAMPLE
+        self.rng = np.random.default_rng(seed)
+        ss = 4
+        yy, xx = (np.mgrid[:n_pup * ss, :n_pup * ss] + 0.5) / (n_pup * ss) - 0.5
+        fine_pupil = (np.hypot(xx, yy) <= 0.5).astype(float)
+        self.pupil = fine_pupil.reshape(n_pup, ss, n_pup, ss).mean(axis=(1, 3))
+        yy, xx = (np.mgrid[:n_pup, :n_pup] + 0.5) / n_pup - 0.5
+        self.x, self.y = xx, yy                       # pupil coords in units of D
+        self.inside = self.pupil > 0.5
+        self.rho = np.hypot(xx, yy) / 0.5              # normalised radius
+        self.theta = np.arctan2(yy, xx)
+
+    # -- screens ----------------------------------------------------------------
+    def _remove_ptt(self, screen):
+        m = self.inside
+        A = np.stack([np.ones(m.sum()), self.x[m], self.y[m]], axis=1)
+        coef, *_ = np.linalg.lstsq(A, screen[m], rcond=None)
+        out = screen - (coef[0] + coef[1] * self.x + coef[2] * self.y)
+        return out * self.inside
+
+    def rms_nm(self, screen):
+        return float(np.sqrt(np.mean(screen[self.inside] ** 2)))
+
+    def scaled(self, screen, rms_nm):
+        return screen * (rms_nm / self.rms_nm(screen))
+
+    def psd_screen(self, alpha=2.5, f_min=1.0, f_max=None, rms_nm=1.0):
+        """Random screen with PSD ~ f^-alpha between f_min and f_max cycles/D."""
+        n = self.n_pup
+        fx = np.fft.fftfreq(n) * n                  # cycles per pupil width (= per D)
+        f = np.hypot(fx[None, :], fx[:, None])
+        f_max = n / 2 if f_max is None else f_max
+        amp = np.where((f >= f_min) & (f <= f_max), np.maximum(f, 1e-9) ** (-alpha / 2), 0.0)
+        phase = self.rng.uniform(0, 2 * np.pi, (n, n))
+        screen = np.real(np.fft.ifft2(amp * np.exp(1j * phase))) * self.pupil
+        return self.scaled(self._remove_ptt(screen), rms_nm)
+
+    def zernike_screen(self, coeffs_nm):
+        """Low-order screen: dict of {'focus','astig0','astig45','coma_x','coma_y'} -> RMS nm each."""
+        r, t = self.rho, self.theta
+        modes = {
+            'focus': np.sqrt(3) * (2 * r ** 2 - 1),
+            'astig0': np.sqrt(6) * r ** 2 * np.cos(2 * t),
+            'astig45': np.sqrt(6) * r ** 2 * np.sin(2 * t),
+            'coma_x': np.sqrt(8) * (3 * r ** 3 - 2 * r) * np.cos(t),
+            'coma_y': np.sqrt(8) * (3 * r ** 3 - 2 * r) * np.sin(t),
+        }
+        screen = sum(float(a) * modes[k] for k, a in coeffs_nm.items()) * self.pupil
+        return self._remove_ptt(screen)
+
+    def strehl(self, screen):
+        phi = 2 * np.pi * screen[self.inside] * 1e-9 / self.inst.wavelength_m
+        return float(np.abs(np.mean(np.exp(1j * phi))) ** 2)
+
+    def screen_for_strehl(self, target_S, alpha=2.5, f_min=1.0, f_max=None):
+        """Static PSD screen scaled so that the exact pupil-average Strehl equals target_S."""
+        screen = self.psd_screen(alpha, f_min, f_max, rms_nm=1.0)
+        lo, hi = 0.0, 300.0
+        for _ in range(60):
+            mid = 0.5 * (lo + hi)
+            if self.strehl(self.scaled(screen, mid)) > target_S:
+                lo = mid
+            else:
+                hi = mid
+        return self.scaled(screen, 0.5 * (lo + hi))
+
+    # -- PSF --------------------------------------------------------------------
+    def psf(self, screen_nm, jitter_mas=0.0):
+        """Unit-normalised PSF on the fine grid, centred on fine pixel (n-1)/2."""
+        phi = 2 * np.pi * screen_nm * 1e-9 / self.inst.wavelength_m
+        E = np.zeros((self.n_fft, self.n_fft), dtype=complex)
+        E[: self.n_pup, : self.n_pup] = self.pupil * np.exp(1j * phi)
+        F = np.fft.fftshift(np.fft.fft2(E))
+        I = np.abs(F) ** 2
+        c = self.n_fft // 2
+        h = (self.n_fine - 1) // 2
+        psf = I[c - h: c + h + 1, c - h: c + h + 1]
+        if jitter_mas > 0:
+            psf = gaussian_filter(psf, jitter_mas / (self.inst.plate_mas / OVERSAMPLE), mode='nearest')
+        # normalised on the stamp, as the ETC's Airy stamp is (the wings outside hold ~0.8%)
+        return psf / psf.sum()
+
+
+def azimuthal_mean_image(image):
+    """Image of the azimuthal mean about the centre (a radial-profile fit with no free parameters)."""
+    n = image.shape[0]
+    c = (n - 1) / 2.0
+    yy, xx = np.mgrid[:n, :n]
+    r = np.hypot(xx - c, yy - c)
+    ri = np.rint(r).astype(int)
+    prof = np.bincount(ri.ravel(), weights=image.ravel()) / np.bincount(ri.ravel())
+    return prof[ri]
+
+
+def speckle_floor(inst, psf_sci, psf_ref, sep_mas, r_ap_px=2.0, snr=5.0, radial_subtract=True,
+                  n_angles=24, window_mas=None, n_window=7, planet_psf=None):
+    """Contrast floor from the residual PSF_sci - PSF_ref, as a planet/star flux ratio.
+
+    The residual is optionally cleaned of its azimuthal mean (what a radial-profile
+    fit or an annulus-scaled reference removes). The floor is `snr` times the RMS of
+    the residual aperture sum over `n_angles` position angles and `n_window`
+    separations spanning one Airy FWHM, divided by the planet's enclosed fraction.
+    With radial_subtract=True this is the asymmetric (speckle) term only.
     """
     if window_mas is None:
         window_mas = inst.fwhm_mas
-    p_sci = inst.fine_psf(jitter_sci, strehl_sci, halo_k)
-    p_ref = inst.fine_psf(jitter_ref, strehl_ref, halo_k)
+    resid = psf_sci - psf_ref
+    if radial_subtract:
+        resid = resid - azimuthal_mean_image(resid)
+    n = resid.shape[0]
+    c = (n - 1) / 2.0
+    xx, yy = _fine_grid(n)
+    fine_plate = inst.plate_mas / OVERSAMPLE
+    r_ap_fine = r_ap_px * OVERSAMPLE
+    h = int(np.ceil(r_ap_fine)) + 1
+    ref = psf_sci if planet_psf is None else planet_psf
+    pfrac = float(ref[np.hypot(xx, yy) <= r_ap_fine].sum())
     seps = np.atleast_1d(sep_mas).astype(float)
     offs = np.linspace(-window_mas / 2, window_mas / 2, n_window)
-    grid = np.clip(seps[:, None] + offs[None, :], r_ap_px * inst.plate_mas, None)
-    s_sci, pfrac = aperture_fractions(inst, p_sci, grid.ravel(), r_ap_px)
-    s_ref, _ = aperture_fractions(inst, p_ref, grid.ravel(), r_ap_px)
-    resid = np.sqrt(np.mean((s_sci - s_ref).reshape(grid.shape) ** 2, axis=1))
-    return snr * resid / pfrac
+    angles = np.linspace(0, 2 * np.pi, n_angles, endpoint=False)
+    out = np.empty(seps.size)
+    for i, s in enumerate(seps):
+        vals = []
+        for o in offs:
+            d = max(s + o, r_ap_px * inst.plate_mas) / fine_plate
+            for th in angles:
+                x0, y0 = d * np.cos(th), d * np.sin(th)
+                i0, j0 = int(round(y0 + c)), int(round(x0 + c))
+                sl = (slice(i0 - h, i0 + h + 1), slice(j0 - h, j0 + h + 1))
+                m = np.hypot(xx[sl] - x0, yy[sl] - y0) <= r_ap_fine
+                vals.append(resid[sl][m].sum())
+        out[i] = np.sqrt(np.mean(np.square(vals)))
+    return snr * out / pfrac
+
+
+def shifted(psf, dx_mas, inst, dy_mas=0.0):
+    """PSF shifted by (dx, dy) mas on the fine grid (linear interpolation)."""
+    fp = inst.plate_mas / OVERSAMPLE
+    return nd_shift(psf, (dy_mas / fp, dx_mas / fp), order=1, mode='constant')
 
 
 # ------------------------------------------------------------ self-checks ---
@@ -267,7 +405,25 @@ if __name__ == "__main__":
     cc = contrast_curve(inst, 10.0, 1.0, [100.0, 200.0, 400.0], 3600.0)
     assert np.all(np.diff(cc["contrast"]) < 0), cc["contrast"]
     assert cc["t_frame_s"] > 0 and cc["n_frames"] >= 1
-    assert np.all(mismatch_floor(inst, 10.0, 10.0, 1.0, 1.0, [180.0]) == 0)
-    assert np.all(mismatch_floor(inst, 10.0, 12.0, 1.0, 1.0, [180.0]) > 0)
+    # pupil-plane PSF: flat wavefront must reproduce the ETC Airy aperture light at 160 mas
+    w = WfePSF(inst)
+    flat = w.psf(np.zeros((w.n_pup, w.n_pup)), jitter_mas=10.0)
+    assert abs(flat.sum() - 1) < 1e-3, flat.sum()
+    assert np.unravel_index(flat.argmax(), flat.shape) == ((n - 1) // 2, (n - 1) // 2)
+    s_fft, p_fft = aperture_fractions(inst, flat, [160.0, 300.0], 2.0)
+    s_airy, p_airy = aperture_fractions(inst, psf, [160.0, 300.0], 2.0)
+    assert np.all(np.abs(s_fft / s_airy - 1) < 0.05), (s_fft, s_airy)
+    assert abs(p_fft / p_airy - 1) < 0.02, (p_fft, p_airy)
+    stat = w.screen_for_strehl(0.822)
+    assert abs(w.strehl(stat) - 0.822) < 1e-3 and 40 < w.rms_nm(stat) < 52, w.rms_nm(stat)
+    # a symmetric residual is removed by the radial subtraction; a shifted one is not
+    sym = speckle_floor(inst, inst.fine_psf(10.0), inst.fine_psf(12.0), [160.0], radial_subtract=True)
+    sym0 = speckle_floor(inst, inst.fine_psf(10.0), inst.fine_psf(12.0), [160.0], radial_subtract=False)
+    assert sym[0] < 0.3 * sym0[0], (sym, sym0)
+    reg = speckle_floor(inst, psf, shifted(psf, 1.0, inst), [160.0])
+    assert reg[0] > 0 and speckle_floor(inst, psf, psf, [160.0])[0] == 0
+    print(f"WfePSF: n_fft {w.n_fft}, flat-wavefront aperture light vs ETC Airy at 160/300 mas: "
+          f"{s_fft[0] / s_airy[0]:.3f}, {s_fft[1] / s_airy[1]:.3f}; S = 0.822 screen = {w.rms_nm(stat):.1f} nm RMS; "
+          f"symmetric residual after radial subtraction: {sym[0] / sym0[0]:.3f} of before")
     print("hci_psf self-checks passed:", f"star {inst.star_rate:.4g} e-/s, line 1e-16 -> {r1:.3f} e-/s,",
           f"t_frame {cc['t_frame_s']:.2f} s, 5-sigma contrast at 200 mas in 1 h: {cc['contrast'][1]:.2e}")

@@ -57,12 +57,12 @@ OUT = 'halpha_hci_out'
 os.makedirs(OUT, exist_ok=True)
 
 # ---- PDS 70 (the worked example; edit here) ---------------------------------------------------
-HOST_SPT, HOST_G = 'K7V', 11.7          # PDS 70: K7, Gaia G ~ 11.7, d = 112 pc
+HOST_SPT, HOST_G = 'K7V', 11.6          # PDS 70: K7IVe, Gaia G = 11.61 (Simbad), plx 8.90 mas -> 112 pc
 HOST_HA_EW_A = 0.0                      # host's own H-alpha emission EW [A]; 0 = continuum only (see caveats)
-# line fluxes [erg/s/cm^2] and projected separations [mas]; see the PDS 70 section for the sources
+# line fluxes [erg/s/cm^2] and projected separations [mas]; one source per number, see the PDS 70 section
 PLANETS = {
-    'b': dict(sep_mas=180.0, flux=8.1e-16, flux_lo=2.3e-16, flux_hi=1.6e-15),
-    'c': dict(sep_mas=220.0, flux=3.1e-16, flux_lo=1.9e-16, flux_hi=4.8e-16),
+    'b': dict(sep_mas=160.0, flux=8.1e-16, flux_lo=2.3e-16, flux_hi=1.6e-15),   # sep: Close+2025 (2023-24: 150-158 mas)
+    'c': dict(sep_mas=210.0, flux=3.1e-16, flux_lo=2.0e-16, flux_hi=4.8e-16),   # sep: Close+2025 (2023-24: 207 mas)
 }
 
 def savefig(fig, name):
@@ -128,8 +128,10 @@ md(r"""
 Radial profile of the PDS 70 host in the 2 nm filter, in e-/s per detector pixel, for the baseline PSF, the
 requirement-corner Strehl, and the FRED scattered-light halo. Two things to notice:
 
-* At 656 nm the Airy core is 45 mas FWHM (2.7 px). PDS 70 b at 180 mas sits 4 Airy FWHM out, where the
-  Airy wing is ~$10^{-4}$ of the total flux per pixel: bright, but photon-noise-countable.
+* At 656 nm the Airy core is 45 mas FWHM (2.7 px). PDS 70 b at 160 mas sits 3.5 Airy FWHM out, where the
+  jitter-smeared Airy wing is a few $10^{-5}$ of the total flux per pixel (printed below): bright, but
+  photon-noise-countable. The PSF is the ETC's unobscured circular-aperture Airy pattern; a central
+  obstruction would raise the ring envelope at these separations.
 * The FRED halo is tabulated on 0.4 mm cells (106 px) and is held flat inside 85 px (1.4"); its level there
   is $2\times10^{-10}$ per pixel, five to six orders of magnitude below the Airy wing at 0.1-0.5". Whether
   it is achromatic or scales as $\lambda^{-2}$ makes no difference in this zone, so the two are plotted but
@@ -162,6 +164,13 @@ ax.plot(rr, halo * (450 / 656.3) ** 2, color='0.3', ls=':', label=r'FRED halo $\
 for name, pl in PLANETS.items():
     ax.axvline(pl['sep_mas'], color=AMBER, lw=1)
     ax.text(pl['sep_mas'] + 4, 3e-5, f'PDS 70 {name}', color=AMBER, fontsize=8, rotation=90, va='bottom')
+# host cross-check against HST: planet/star ratio in WFC3 F656N (17.7 A wide; Zhou et al. 2021)
+F656N_W_A, F_B_HST, F_STAR_HST = 17.66, 1.62e-15, 1.18e-12
+ratio_hst = F_B_HST / F_STAR_HST
+ratio_etc = inst.line_rate(F_B_HST) / inst.star_rate * (10 * inst.band_eqw_nm) / F656N_W_A
+print(f'HST cross-check: planet/star ratio in F656N observed {ratio_hst:.2e}, ETC host model predicts {ratio_etc:.2e} '
+      f'(ratio {ratio_etc / ratio_hst:.2f}; the HST value includes the host H-alpha line, the ETC does not)')
+assert abs(ratio_etc / ratio_hst - 1) < 0.3
 ax.axhline(inst.sky_rate + inst.dark_rate, color=GREEN, ls='-.', lw=1, label='sky + dark per pixel')
 ax.set_yscale('log'); ax.set_ylim(1e-7, 3e3); ax.set_xlim(0, 600)
 ax.set_xlabel('separation [mas]'); ax.set_ylabel('host star light [e$^-$ s$^{-1}$ px$^{-1}$]')
@@ -243,33 +252,45 @@ fig.tight_layout(); savefig(fig, 'fig03_contrast_curves')
 
 code(r"""
 # noise budget at the PDS 70 b separation, 1 h, baseline PSF
-print('variance budget in the optimal aperture at 180 mas, 1 h, jitter 10 mas, S = 1:')
+SEP_B = PLANETS['b']['sep_mas']
+print(f'variance budget in the optimal aperture at {SEP_B:.0f} mas, 1 h, jitter 10 mas, S = 1:')
 for f in FILTERS:
     inst = INST[f]; cc = CC[f, 3600.0, 1.0]
-    k = np.argmin(np.abs(SEPS - 180)); r_ap = cc['r_ap_px'][k]
-    sfrac, pfrac = aperture_fractions(inst, inst.fine_psf(REQ_JIT, 1.0), [180.0], r_ap)
+    k = np.argmin(np.abs(SEPS - SEP_B)); r_ap = cc['r_ap_px'][k]
+    sfrac, pfrac = aperture_fractions(inst, inst.fine_psf(REQ_JIT, 1.0), [SEP_B], r_ap)
     T = 3600.0; n_pix = np.pi * r_ap ** 2
     star = inst.star_rate * sfrac[0] * T; sky = (inst.sky_rate + inst.dark_rate) * n_pix * T
     rn = cc['n_frames'] * inst.read_noise ** 2 * n_pix; tot = star + sky + rn
     print(f"  {FLAB[f]:14s}: r_ap {r_ap:.1f} px, EE {pfrac:.2f}, frame {cc['t_frame_s']:.2f} s x {cc['n_frames']} frames; "
           f"variance: star {star / tot:.2f}, sky+dark {sky / tot:.2f}, read {rn / tot:.2f}; "
           f"5σ contrast {cc['contrast'][k]:.2e}, raw {cc['raw'][k]:.2e}")
+
+# sensitivity of the 2 nm photon limit to the detector assumptions (gain mode trades well depth against read noise)
+inst = i2; base = contrast_curve(inst, REQ_JIT, 1.0, [SEP_B], 3600.0)['contrast'][0]
+alt = {}
+for label, rn, wf in [('read noise 1.5 e-', 1.5, 0.5), ('read noise 5 e-', 5.0, 0.5), ('frames to 80% well', inst.read_noise, 0.8)]:
+    rn0 = inst.read_noise; inst.read_noise = rn
+    alt[label] = contrast_curve(inst, REQ_JIT, 1.0, [SEP_B], 3600.0, well_fraction=wf)['contrast'][0] / base
+    inst.read_noise = rn0
+print('2 nm photon limit relative to the default (3.0 e- read noise, half well):', {k: f'{v:.2f}' for k, v in alt.items()})
 """)
 
 md(r"""
 ## 4. PDS 70 b and c
 
-Literature H-alpha line fluxes (erg s$^{-1}$ cm$^{-2}$); the line is variable at the factor-of-a-few level,
-so the range is carried, not just a nominal value:
+Literature H-alpha line fluxes (erg s$^{-1}$ cm$^{-2}$), one source per number. The line is variable at the
+factor-of-a-few level and the methods differ (MUSE and MagAO-X measure a pure line flux; HST F656N is
+line plus continuum in a 1.8 nm band), so a range is carried, not just a nominal value:
 
-| planet | separation | nominal | range | sources |
+| planet | separation (2023-24) | nominal | low | high |
 |---|---|---|---|---|
-| b | ~180 mas | $8.1\times10^{-16}$ | $2.3\times10^{-16}$ to $1.6\times10^{-15}$ | Hashimoto et al. 2020 (MUSE re-analysis); Haffert et al. 2019 range; Zhou et al. 2021 HST mean |
-| c | ~220 mas | $3.1\times10^{-16}$ | $1.9$ to $4.8\times10^{-16}$ | Hashimoto et al. 2020; Haffert et al. 2019 range |
+| b | 150-158 mas (Close et al. 2025) | $8.1\times10^{-16}$ (Hashimoto et al. 2020, MUSE 2018) | $2.3\times10^{-16}$ (Close et al. 2025, 2023) | $1.6\times10^{-15}$ (Zhou et al. 2021, HST 2020) |
+| c | 207 mas (Close et al. 2025) | $3.1\times10^{-16}$ (Hashimoto et al. 2020) | $2.0\times10^{-16}$ (Close et al. 2025, 2023) | $4.8\times10^{-16}$ (Close et al. 2025, 2024) |
 
-Host: K7, Gaia $G \approx 11.7$, 112 pc; a weak-line T Tauri star whose own H-alpha emission is small
-(`HOST_HA_EW_A` above; set it to include the host line in the narrow bands). Below: SNR of each planet
-versus total integration for each filter, at the photon limit with ideal PSF subtraction.
+Planet b's separation has shrunk from 195 mas (2012-2018) to ~150 mas; 160 mas is used here as the current
+epoch. Host: K7IVe, Gaia $G = 11.6$, 112 pc; a weak-line T Tauri star whose own H-alpha emission is small
+(`HOST_HA_EW_A` above; the HST cross-check in section 2 bounds it at the ~10% level). Below: SNR of each
+planet versus total integration for each filter, at the photon limit with ideal PSF subtraction.
 """)
 
 code(r"""
@@ -356,10 +377,11 @@ Peak throughput is nearly identical for the three filters in the ETC's EOL curve
 core.
 
 **PDS 70.** At the photon limit with an ideal PSF subtraction, both planets are detectable in the 2 nm filter
-within an hour (Table above): the Airy wing at 180-220 mas is ~$10^{-4}$ of the stellar flux per pixel, which
-is bright but countable. Planet b even approaches the raw (no-subtraction) threshold in the 2 nm band. The
-real limit will therefore be **PSF-subtraction systematics**, not photons; that is what
-`halpha_hci_jitter_strehl.ipynb` quantifies.
+within an hour (Table above): the jitter-smeared Airy wing at 160-210 mas is a few $10^{-5}$ of the stellar
+flux per pixel, bright but countable. Planet b is within a factor of a few of the raw (no-subtraction)
+threshold in the 2 nm band. The photon limit itself depends on the detector gain mode at the tens-of-percent
+level (read noise and usable well; printed in section 3). The real limit will therefore be
+**PSF-subtraction systematics**, not photons; that is what `halpha_hci_jitter_strehl.ipynb` quantifies.
 
 **What this does not include.**
 * Any PSF-subtraction residual (jitter or Strehl changes between science and reference, polarisation,
@@ -372,9 +394,10 @@ real limit will therefore be **PSF-subtraction systematics**, not photons; that 
   at 0.1-0.5" is the one instrument property this analysis cannot bound.
 * The PSF is monochromatic at the effective wavelength (fine for a 2 nm band), unobscured Airy (the ETC's
   model), and static; the planet is unresolved with a 2 Å line width.
-* Saturation is treated with a half-well rule on the peak pixel; no bleeding or persistence. Frame times below
-  a few tenths of a second (bright hosts, wide filters) would exceed the IMX455 full-frame readout rate and need
-  a sub-array readout; the duty-cycle loss is not modelled.
+* Saturation is treated with a half-well rule on the peak pixel; no bleeding, persistence or nonlinearity.
+  Readout duty cycle is not modelled: a 16-bit full-frame IMX455 read takes a few tenths of a second, so the
+  0.8 s frames of the 20 nm filter lose of order 30% of the time and the 2 nm filter a few percent, which
+  widens the 2 nm advantage. Bright hosts in any filter need a sub-array readout.
 """)
 
 nb = new_notebook()

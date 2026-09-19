@@ -1,0 +1,16 @@
+# %ECSV 1.0
+# ---
+# datatype:
+# - {name: strehl, datatype: float64}
+# - {name: gauss_k2, datatype: float64, format: '%.2f'}
+# - {name: gauss_k4, datatype: float64, format: '%.2f'}
+# - {name: gauss_k8, datatype: float64, format: '%.2f'}
+# - {name: powerlaw_wfe, datatype: float64, format: '%.2f'}
+# - {name: peak_fraction, datatype: float64, format: '%.2f'}
+# - {name: t_frame_s, datatype: float64, format: '%.2f'}
+# schema: astropy-2.0
+strehl gauss_k2 gauss_k4 gauss_k8 powerlaw_wfe peak_fraction t_frame_s
+1.0 1.0 1.0 1.0 0.998128404869865 0.08734629511493529 7.571138349367406
+0.9 0.9230282500811098 1.811559597313886 1.96079666234552 1.5642943689589657 0.07935759631085555 8.33330286403076
+0.822 0.8629902851443746 2.4445760832187178 2.710218058975026 1.6171862804576793 0.07312641124367329 9.043393123945549
+0.7 0.7690847502433285 3.4346787919416566 3.8823899870365617 2.550189939377248 0.06338019870269596 10.434029841432476
