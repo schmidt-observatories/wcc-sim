@@ -1,5 +1,7 @@
 ![Logo](docs/logo_schmidt_observatory_system.png)
 
+[![Tests](https://github.com/schmidt-observatories/wcc-sim/actions/workflows/tests.yml/badge.svg)](https://github.com/schmidt-observatories/wcc-sim/actions/workflows/tests.yml)
+
 # wcc-sim
 End-to-end image simulator and differential-photometry pipeline for the
 Wide-field Context Camera (WCC) on Lazuli.
