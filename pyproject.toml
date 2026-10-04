@@ -1,30 +1,42 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "wcc-sim"
 version = "0.1.0"
 description = "End-to-end photometric image simulator for the Lazuli Wide-field Context Camera (WCC)"
-requires-python = ">=3.11"
-# NOTE: wcc_etc (>=0.6.0) is also required but is not on PyPI —
-# install it editable first: pip install -e <path-to-wcc-etc>
-dependencies = [
-    "numpy",
-    "scipy",
-    "astropy",
-    "astroquery",
-    "synphot",
-    "photutils",
-    "dust_extinction",
+readme = "README.md"
+license = "BSD-3-Clause"
+license-files = ["LICENSE"]
+authors = [
+    { name = "Gudmundur Stefansson", email = "gstefansson@schmidtsciences.org" },
 ]
+requires-python = ">=3.11"
+# wcc_etc is also required but is not on PyPI; install it first from
+# https://github.com/schmidt-observatories/wcc-etc (see README).
+dependencies = [
+    "numpy>=1.24",
+    "scipy>=1.10",
+    "astropy>=5.3",
+    "astroquery>=0.4.7",
+    "synphot>=1.2",
+    "photutils>=2.0",      # ImagePSF
+    "dust_extinction>=1.2",
+    "matplotlib>=3.7",     # wcc_phot report/live view, wcc_sim.psfreport
+]
+
+[project.urls]
+Homepage = "https://github.com/schmidt-observatories/wcc-sim"
+Documentation = "https://wcc-sim.readthedocs.io"
+Issues = "https://github.com/schmidt-observatories/wcc-sim/issues"
 
 [project.scripts]
 wcc-sim = "wcc_sim.cli:main"
 wcc-phot = "wcc_phot.cli:main"
 
 [project.optional-dependencies]
-test = ["pytest"]
+test = ["pytest", "ruff"]
 docs = [
     "sphinx",
     "sphinx-rtd-theme",

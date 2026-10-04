@@ -116,7 +116,6 @@ def test_write_fits(canned_catalog, tmp_path):
 
 
 def test_empty_catalog_sky_only():
-    from astropy.table import Table
 
     from wcc_sim import simulate_field
     from wcc_sim.catalog import _empty_table

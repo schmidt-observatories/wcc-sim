@@ -2,7 +2,6 @@
 
 import numpy as np
 import pytest
-from astropy.table import Table
 
 from tests.conftest import DEC0, RA0
 

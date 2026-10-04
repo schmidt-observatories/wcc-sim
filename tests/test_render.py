@@ -94,7 +94,6 @@ def test_saturation_flag_and_clip(base_sim):
     out = add_noise_and_digitize(sources, base_sim, 90.0, 1, rng)
     assert out["satmask"][16, 16]
     assert not out["satmask"][0, 0]
-    gain = float(base_sim.sensor.gain.value)
     adc_max = float(base_sim.sensor.adc_max.value)
     assert out["image_adu"][16, 16] <= adc_max + 1e-3
 

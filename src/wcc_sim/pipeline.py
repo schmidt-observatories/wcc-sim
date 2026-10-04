@@ -12,7 +12,7 @@ from .catalog import query_gaia
 from .chromatic import effective_psf_for_spt, effective_wavelength_nm_for_spt
 from .detectors import get_geometry, make_base_simulation
 from .extended import render_extended
-from .fitswriter import build_hdulist, write_fits
+from .fitswriter import build_hdulist
 from .psf import DEFAULT_STAMP, render_oversampled_psf
 from .render import (
     add_noise_and_digitize,
