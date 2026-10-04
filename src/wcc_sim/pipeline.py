@@ -9,7 +9,7 @@ from astropy.table import Table
 from astropy.wcs import WCS
 
 from .catalog import query_gaia
-from .chromatic import effective_psf_for_spt
+from .chromatic import effective_psf_for_spt, effective_wavelength_nm_for_spt
 from .detectors import get_geometry, make_base_simulation
 from .extended import render_extended
 from .fitswriter import build_hdulist, write_fits
@@ -169,12 +169,17 @@ def simulate_field(
     so `wings=False` turns it off as well; `params["scatter"]` reports what
     actually ran.
 
-    `wavelength_nm` overrides the wavelength the Airy core is computed at
-    (default: the sensorfilter's central wavelength). It sets PSF *geometry*
-    only -- the synthetic photometry still uses the sensorfilter's bandpass,
-    so the star's electron rate is unchanged. Use it to put the core at the
-    450 nm of the FRED stray-light run. Ignored for focus != 0, which uses
-    fixed Huygens images.
+    In focus, each star's Airy core is built at the effective wavelength of
+    its spectral template through the band -- what wcc_etc does for the same
+    star -- rather than at the filter pivot, which is ~130 nm too blue for an
+    M dwarf in the broad band (23% too high a peak pixel). The per-star value
+    is recorded in the CAT column `psf_wavelength_nm`. `wavelength_nm`
+    overrides this for *every* star (PSF geometry only -- the synthetic
+    photometry still uses the full bandpass, so electron rates are
+    unchanged); use it to put the core at the 450 nm of the FRED stray-light
+    run. Ignored for focus != 0, which uses fixed Huygens images. The
+    field-level PSF (wing fit, extended-source kernels, PSF report) stays at
+    the pivot or override wavelength, recorded in `PSFWAVE`.
 
     `report=path` writes a PDF+PNG showing the PSF's radial profile split
     into its Airy and scattered-light terms (see wcc_sim.psfreport).
@@ -273,6 +278,12 @@ def simulate_field(
         wing_floor_e = float(wing_floor_sigma) * sigma_floor
 
     chromatic_active = bool(chromatic) and focus == 0
+    # Per-template PSFs in focus: spectrum-weighted (7 nodes) when chromatic,
+    # otherwise monochromatic at each template's effective wavelength. An
+    # explicit wavelength_nm pins every star to one PSF instead.
+    per_spt = focus == 0 and len(catalog) > 0 and (chromatic_active or wavelength_nm is None)
+    n_nodes = 7 if chromatic_active else 1
+    star_wavelength_nm = np.full(len(catalog), psf_wavelength_nm, dtype=float)
 
     def _wing_for(psf):
         if not wings:
@@ -280,14 +291,16 @@ def simulate_field(
         core = fit_wing_model(bin_oversampled(psf, oversample))
         return core if halo is None else CombinedWing(core=core, halo=halo)
 
-    if chromatic_active and len(catalog):
+    if per_spt:
         image_sources = np.zeros(shape, dtype=np.float32)
         for spt in np.unique(spts):
             sel = spts == spt
             psf_spt = effective_psf_for_spt(
                 sim, sensorfilter, spt, 0.0, focus, oversample,
                 stamp_npix=n_stamp, jitter_sigma_mas=jitter_sigma_mas,
+                n_nodes=n_nodes,
             )
+            star_wavelength_nm[sel] = effective_wavelength_nm_for_spt(sensorfilter, str(spt))
             image_sources += render_scene(
                 shape, xs[sel], ys[sel], rates[sel] * exptime, psf_spt,
                 oversample, wing=_wing_for(psf_spt), floor_e=wing_floor_e,
@@ -327,6 +340,7 @@ def simulate_field(
     catalog["y"] = np.asarray(ys, dtype=float)
     catalog["spt"] = spts
     catalog["rate_e_s"] = np.asarray(rates, dtype=float)
+    catalog["psf_wavelength_nm"] = star_wavelength_nm
     in_image = (
         (catalog["x"] > -0.5) & (catalog["x"] < nx - 0.5)
         & (catalog["y"] > -0.5) & (catalog["y"] < ny - 0.5)

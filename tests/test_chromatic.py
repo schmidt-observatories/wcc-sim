@@ -44,15 +44,19 @@ def test_red_spectrum_shifts_nodes_red():
     assert np.sum(waves_m * w_red) > np.sum(waves_m * w_blue)
 
 
-def test_single_node_is_monochromatic():
-    from wcc_sim.chromatic import effective_psf
+def test_single_node_is_monochromatic_at_the_effective_wavelength():
+    """n_nodes=1 is one Airy render at lambda_eff, not at the pivot (#20)."""
+    from wcc_sim.chromatic import effective_psf, effective_wavelength_m
     from wcc_sim.psf import render_oversampled_psf
 
     sim = _sim()
-    mono = render_oversampled_psf(sim, 0, oversample=OS, stamp_npix=STAMP)
-    eff = effective_psf(sim, 0, _spectrum("G2V"), oversample=OS,
-                        stamp_npix=STAMP, n_nodes=1)
+    spec = _spectrum("G2V")
+    pivot = render_oversampled_psf(sim, 0, oversample=OS, stamp_npix=STAMP)
+    mono = render_oversampled_psf(sim, 0, oversample=OS, stamp_npix=STAMP,
+                                  wavelength_m=effective_wavelength_m(sim, spec))
+    eff = effective_psf(sim, 0, spec, oversample=OS, stamp_npix=STAMP, n_nodes=1)
     assert np.array_equal(eff, mono)
+    assert not np.array_equal(eff, pivot)
 
 
 def test_defocus_is_passthrough():
@@ -119,3 +123,16 @@ def test_attenuation_negative_ebv_raises():
 
     with _pytest.raises(ValueError):
         attenuation_factor("G2V", -0.1, "zwo:i")
+
+
+def test_effective_wavelength_matches_the_etc():
+    """Issue #20: the sim must render the PSF where the ETC does."""
+    from wcc_sim.chromatic import effective_wavelength_nm_for_spt
+    from wcc_sim.starflux import make_star_simulation
+
+    for spt in ("O5V", "G2V", "M5V"):
+        etc = float(make_star_simulation(spt, "zwo:bb").effective_wavelength.to("nm").value)
+        assert effective_wavelength_nm_for_spt("zwo:bb", spt) == pytest.approx(etc, abs=1.0)
+    pivot = float(make_star_simulation("M5V", "zwo:bb").sensor.wavelength.to("nm").value)
+    assert effective_wavelength_nm_for_spt("zwo:bb", "M5V") - pivot > 100.0
+

@@ -51,6 +51,21 @@ def _weighted_flux(sim, spectrum, ebv=0.0, rv=3.1):
     return wave.value, st
 
 
+def effective_wavelength_m(sim, spectrum, ebv=0.0, rv=3.1):
+    """Photon-weighted effective wavelength [m] of spectrum x throughput.
+
+    The wavelength wcc_etc renders a monochromatic PSF at (its
+    ``Simulation.effective_wavelength``), as opposed to the filter pivot
+    that ``sim.sensor.wavelength`` holds: the Airy scale is linear in
+    wavelength, and an M5V star through the broad band sits ~130 nm redward
+    of the pivot (issue #20).
+    """
+    wave_aa, st = _weighted_flux(sim, spectrum, ebv=ebv, rv=rv)
+    if st.sum() <= 0.0:
+        raise ValueError("spectrum has no flux inside the bandpass")
+    return float(np.average(wave_aa, weights=st)) * 1e-10
+
+
 def band_nodes(sim, spectrum, n_nodes=7, ebv=0.0, rv=3.1):
     """Node wavelengths [m] and unit-sum weights for the effective PSF.
 
@@ -77,14 +92,25 @@ def band_nodes(sim, spectrum, n_nodes=7, ebv=0.0, rv=3.1):
 
 def effective_psf(sim, focus, spectrum=None, oversample=11, stamp_npix=None,
                   jitter_sigma_mas=None, n_nodes=7, ebv=0.0):
-    """Spectrum-weighted oversampled PSF; monochromatic passthrough when
-    focus != 0 (no wavelength model), n_nodes == 1, or spectrum is None."""
+    """Spectrum-weighted oversampled PSF.
+
+    Monochromatic passthrough at the pivot wavelength when focus != 0 (no
+    wavelength model) or spectrum is None. With ``n_nodes == 1`` the PSF is
+    monochromatic at the spectrum's effective wavelength -- the ETC's own
+    choice, and the default for point sources in simulate_field.
+    """
     if n_nodes < 1:
         raise ValueError(f"n_nodes must be >= 1, got {n_nodes}")
-    if focus != 0 or n_nodes == 1 or spectrum is None:
+    if focus != 0 or spectrum is None:
         return render_oversampled_psf(
             sim, focus, oversample=oversample, stamp_npix=stamp_npix,
             jitter_sigma_mas=jitter_sigma_mas,
+        )
+    if n_nodes == 1:
+        return render_oversampled_psf(
+            sim, focus, oversample=oversample, stamp_npix=stamp_npix,
+            jitter_sigma_mas=jitter_sigma_mas,
+            wavelength_m=effective_wavelength_m(sim, spectrum, ebv=ebv),
         )
     waves_m, weights = band_nodes(sim, spectrum, n_nodes=n_nodes, ebv=ebv)
     psf = None
@@ -121,6 +147,16 @@ def effective_psf_for_spt(sim, sensorfilter, spt, ebv, focus, oversample,
             n_nodes=n_nodes, ebv=float(ebv),
         )
     return _EFF_PSF_CACHE[key]
+
+
+@lru_cache(maxsize=256)
+def effective_wavelength_nm_for_spt(sensorfilter, spt, ebv=0.0):
+    """Effective wavelength [nm] of one spectral template in a sensorfilter."""
+    from .detectors import make_base_simulation
+
+    sim = make_base_simulation(sensorfilter)
+    spectrum = get_scene_element(str(spt), mag=15.0).spectrum
+    return effective_wavelength_m(sim, spectrum, ebv=float(ebv)) * 1e9
 
 
 @lru_cache(maxsize=256)
