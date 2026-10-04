@@ -83,6 +83,7 @@ def simulate_field(
     report=None,
     extended_sources=None,
     chromatic=False,
+    wing_floor_sigma=0.1,
 ):
     """Simulate one WCC detector image of the Gaia field at (ra, dec).
 
@@ -92,6 +93,19 @@ def simulate_field(
     PSFs beyond the finite stamp with an analytic power-law wing (see
     wcc_sim.wings) so truncation stays below 0.1 sigma of the background
     noise instead of printing square "postage stamp" edges.
+
+    `wing_floor_sigma` sets how far out each star's wing and halo are drawn:
+    to the radius where that star's surface brightness falls to this many
+    sigma of the background noise. The default 0.1 keeps the truncation
+    invisible in any single pixel, which is what it was chosen for -- but it
+    is a *systematic* cut, so a statistic that averages many pixels sees it
+    at sqrt(N) times that. Measuring a scattered-light background over ~1e5
+    pixels needs ~0.01 or below, at which point the drawn radius grows and
+    so does the render time. `params["wing_floor_e"]` reports the level in
+    electrons and `psf_decomposition(...)["r_out_px"]` the radius it put on
+    row 0; when that radius is smaller than the distance from the star to
+    the far corner of the array, the corners of the frame have no starlight
+    in them at all.
 
     `scatter=True` (default) adds the measured scattered-light halo from the
     FRED stray-light model (see wcc_sim.scatter) as a second additive PSF
@@ -187,7 +201,7 @@ def simulate_field(
         sigma_floor = np.sqrt(
             (sky + dark) * exptime + max(int(n_reads), 1) * read_noise**2
         )
-        wing_floor_e = 0.1 * sigma_floor
+        wing_floor_e = float(wing_floor_sigma) * sigma_floor
 
     chromatic_active = bool(chromatic) and focus == 0
 
@@ -303,6 +317,7 @@ def simulate_field(
         "wing_floor_e": (
             float(wing_floor_e) if wing_floor_e is not None else None
         ),
+        "wing_floor_sigma": float(wing_floor_sigma),
         "well_depth": (
             float(sim.sensor.meta["well_depth"])
             if sim.sensor.meta.get("well_depth") is not None

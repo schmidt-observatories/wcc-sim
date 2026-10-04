@@ -233,3 +233,11 @@ src/wcc_sim/data/psfs/*.pdf
 
 # example-script outputs
 scatter_out/
+
+# Internal material that must never be published: memos, reviews, slides,
+# study outputs. Anything under local/ is yours alone.
+local/
+*_out/
+scripts/psf_no_scatter/
+.DS_Store
+.claude/

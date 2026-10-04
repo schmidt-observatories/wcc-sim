@@ -55,12 +55,14 @@ def test_stamp_captures_energy(base_sim):
 
 def test_defocus_source_data_within_default_stamp():
     """>=99.5% of the raw Huygens energy fits in the default 257-px stamp."""
-    from wcc_etc import DEFOCUS_2WAVE_PATH
-    from wcc_etc.psfsim import load_huygens_psf
+    from wcc_etc import DEFOCUS_2WAVE_PATH, DefocusPSF
 
-    d = load_huygens_psf(DEFOCUS_2WAVE_PATH)  # 256x256 @ 4.0 um/px
+    # DefocusPSF knows the file format (FITS now, text before) and the
+    # source pixel scale; the ETC has no public accessor for the raw grid.
+    psf = DefocusPSF(DEFOCUS_2WAVE_PATH)
+    d = psf._data
     half_um = 257 * 3.76 / 2.0
-    half_px = int(half_um / 4.0)
+    half_px = int(half_um / psf.src_um_per_pix)
     c = d.shape[0] // 2
     lo, hi = max(0, c - half_px), min(d.shape[0], c + half_px + 1)
     frac = d[lo:hi, lo:hi].sum() / d.sum()
