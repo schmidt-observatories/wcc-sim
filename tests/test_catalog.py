@@ -30,6 +30,8 @@ def test_build_adql_contains_cone_and_maglimit():
     assert "gaiadr3.gaia_source" in q
     assert "CIRCLE" in q and "150.1" in q
     assert "phot_g_mean_mag <= 20.5" in q
+    # bright stars must survive any truncation
+    assert q.rstrip().endswith("ORDER BY phot_g_mean_mag")
 
 
 def test_query_gaia_uses_run_query(monkeypatch):
@@ -105,3 +107,47 @@ def test_a_cache_written_before_the_new_columns_is_requeried(monkeypatch, tmp_pa
     out = cat.query_gaia(10.0, 0.0, 100.0, cache_dir=str(tmp_path))
     assert len(calls) == 1
     assert "pmra" in out.colnames
+
+
+def test_query_at_sync_row_cap_warns_and_is_not_cached(monkeypatch, tmp_path):
+    """Exactly 2000 rows is the synchronous-job cap: suspect, never cached."""
+    from wcc_sim import catalog
+
+    monkeypatch.setattr(
+        catalog, "_run_query", lambda adql: fake_table(catalog.SYNC_ROW_CAP)
+    )
+    with pytest.warns(UserWarning, match="truncated"):
+        t = catalog.query_gaia(150.1, 2.2, 100.0, cache_dir=tmp_path)
+    assert len(t) == catalog.SYNC_ROW_CAP
+    assert list(tmp_path.glob("*.ecsv")) == []
+
+
+def test_dithered_pointings_share_one_cache_entry(monkeypatch, tmp_path):
+    """Sub-arcsec dithers must not re-query Gaia frame after frame."""
+    from wcc_sim import catalog
+
+    calls = []
+
+    def counting(adql):
+        calls.append(1)
+        return fake_table()
+
+    monkeypatch.setattr(catalog, "_run_query", counting)
+    px_deg = 16.87e-3 / 3600.0
+    for k in range(4):
+        catalog.query_gaia(150.1 + 0.3 * k * px_deg, 2.2 - 0.2 * k * px_deg,
+                           100.0, cache_dir=tmp_path)
+    assert len(calls) == 1
+
+
+def test_legacy_exact_key_cache_is_still_read(monkeypatch, tmp_path):
+    """Caches written before pointing rounding keep notebooks offline."""
+    from wcc_sim import catalog
+
+    ra, dec = 150.1000031, 2.2000017  # not on the 1 arcsec grid
+    legacy = tmp_path / f"gaia_{ra:.6f}_{dec:+.6f}_100.0_21.00.ecsv"
+    fake_table(5).write(legacy, format="ascii.ecsv")
+    monkeypatch.setattr(
+        catalog, "_run_query", lambda adql: pytest.fail("should hit the cache")
+    )
+    assert len(catalog.query_gaia(ra, dec, 100.0, cache_dir=tmp_path)) == 5
