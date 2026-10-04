@@ -236,7 +236,6 @@ def build_scatter_table(fgd_path=None, n_bins=300):
         normalized so the profile integrates to 1 over the plane), with the
         provenance and the pre-normalization diagnostics in ``.meta``.
     """
-    import re
 
     from wcc_etc.scatter_help import read_fgd
     from wcc_etc.scatter_psf import (

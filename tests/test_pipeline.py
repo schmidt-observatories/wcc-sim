@@ -13,7 +13,8 @@ def run(canned_catalog, **kw):
     kw.setdefault("shape", SHAPE)
     kw.setdefault("stamp_npix", 33)
     kw.setdefault("seed", 42)
-    return simulate_field(RA0, DEC0, sensorfilter="zwo:r", **kw)
+    kw.setdefault("sensorfilter", "zwo:r")
+    return simulate_field(RA0, DEC0, **kw)
 
 
 def test_field_structure(canned_catalog):
@@ -53,7 +54,10 @@ def test_photometric_closure_vs_etc(canned_catalog):
     from wcc_sim.starflux import rate_for_spt
 
     single = canned_catalog[[1]]  # G=15 star, 1.5" from center (interior)
-    f = run(single, add_noise=False, exptime=90.0, scatter=False)
+    # 65 px stamp: the 33 px speed default leaves ~1% of a red star's flux
+    # outside the wing-model normalisation (0.65% remains even at 129 px;
+    # that residual is the wing fit's, see #13/#14), not a rate error.
+    f = run(single, add_noise=False, exptime=90.0, scatter=False, stamp_npix=65)
     spt = f.catalog["spt"][0]
     expected = rate_for_spt(spt, "zwo:r") * 90.0
     assert expected > 0  # guard: a zero rate would make the closure check vacuous
@@ -112,7 +116,6 @@ def test_write_fits(canned_catalog, tmp_path):
 
 
 def test_empty_catalog_sky_only():
-    from astropy.table import Table
 
     from wcc_sim import simulate_field
     from wcc_sim.catalog import _empty_table
@@ -181,3 +184,31 @@ def test_chromatic_defocus_is_passthrough(canned_catalog):
     chrom = run(canned_catalog, add_noise=False, focus=1, stamp_npix=65,
                 chromatic=True)
     assert np.array_equal(mono.image_clean, chrom.image_clean)
+
+
+def test_in_focus_stars_use_their_templates_effective_wavelength(canned_catalog):
+    """Issue #20: an M dwarf's Airy core is built redward of the pivot."""
+    from wcc_sim.chromatic import effective_wavelength_nm_for_spt
+
+    f = run(canned_catalog, sensorfilter="zwo:bb", add_noise=False)
+    pivot = f.params["wavelength_nm"]
+    for spt, lam in zip(f.catalog["spt"], f.catalog["psf_wavelength_nm"]):
+        assert lam == pytest.approx(effective_wavelength_nm_for_spt("zwo:bb", spt), abs=1e-6)
+    red = f.catalog["psf_wavelength_nm"][np.char.startswith(f.catalog["spt"].astype(str), "M")]
+    assert len(red) and (red - pivot > 50.0).all()
+
+
+def test_wavelength_override_pins_every_star(canned_catalog):
+    f = run(canned_catalog, add_noise=False, wavelength_nm=450.0)
+    assert f.params["wavelength_nm"] == 450.0
+    assert (f.catalog["psf_wavelength_nm"] == 450.0).all()
+
+
+def test_m_dwarf_peak_pixel_is_lower_than_a_pivot_render(canned_catalog):
+    """The physics behind #20: ~20% lower peak for M5V in the broad band."""
+    spts = run(canned_catalog).catalog["spt"].astype(str)
+    red = canned_catalog[[int(np.flatnonzero(np.char.startswith(spts, "M"))[0])]]
+    eff = run(red, sensorfilter="zwo:bb", add_noise=False, wings=False)
+    piv = run(red, sensorfilter="zwo:bb", add_noise=False, wings=False,
+              wavelength_nm=eff.params["wavelength_nm"])
+    assert eff.image_clean.max() < 0.9 * piv.image_clean.max()

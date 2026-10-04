@@ -162,7 +162,14 @@ def rate_for_spt(spt, sensorfilter):
     spt = str(spt)
     key = (spt, sensorfilter)
     if key not in _RATE_CACHE:
-        sim = make_star_simulation(spt, sensorfilter)
+        try:
+            sim = make_star_simulation(spt, sensorfilter)
+        except Exception as exc:  # synphot: "Cannot determine filename."
+            raise ValueError(
+                f"unknown spectral template {spt!r} (check the catalog 'spt' "
+                "override column; names are wcc_etc Pickles types such as "
+                "'G2V' or 'F8I')"
+            ) from exc
         _RATE_CACHE[key] = float(
             sim._count_rate_components()["source_rate_total"]
         )
