@@ -281,6 +281,88 @@ Caveats as in the other notebooks: single noise realisation, single wavefront re
 registration and photometric scaling, no near-core scatter, monochromatic unobscured PSF.
 """)
 
+md(r"""
+## 5. The wavefront spectra behind the speckles
+
+Every speckle floor in this study rests on an assumed wavefront power spectral density (PSD). This section
+measures the PSD of the screens that were actually used (azimuthal average of $|\mathcal{F}\{\phi\}|^2$ over the
+pupil, normalised so its integral is the wavefront variance), and shows where each one puts its light in the
+focal plane. Spatial frequency $f$ in cycles per aperture maps to separation $f\,\lambda/D$ = $f \times 44$ mas,
+so PDS 70 b (160 mas) and c (210 mas) sit at 3.6 and 4.8 cycles per aperture.
+""")
+
+code(r"""
+w = WfePSF(inst, seed=11)
+LAM_D_MAS = inst.wavelength_m / inst.diameter_m * 206264.806e3
+S_STAT = w.screen_for_strehl(S_REQ)
+a_lo = DRIFT_NM / np.sqrt(2)
+SCREENS = [('static, S = 0.82 (46 nm, f^-2.5)', S_STAT, 'k'),
+           (f'drift, power-law f^-2.5 ({DRIFT_NM} nm)', w.psd_screen(2.5, 1.0, None, DRIFT_NM), TEAL),
+           (f'drift, 3-5 cycles/D ({DRIFT_NM} nm)', w.psd_screen(0.0, 3.0, 5.0, DRIFT_NM), RED),
+           (f'drift, focus + astigmatism ({DRIFT_NM} nm)', w.zernike_screen({'focus': a_lo, 'astig0': a_lo}), AMBER)]
+
+def wfe_psd(screen):
+    n = w.n_pup
+    P = np.abs(np.fft.fft2(screen)) ** 2 / n ** 4 / w.pupil.mean()   # sum(P) = variance over the pupil [nm^2]
+    fx = np.fft.fftfreq(n) * n
+    f = np.hypot(fx[None, :], fx[:, None])
+    edges = np.arange(0.5, n / 2 + 1)
+    idx = np.digitize(f.ravel(), edges)
+    tot = np.bincount(idx, P.ravel(), minlength=len(edges) + 1)[1:len(edges)]
+    cnt = np.bincount(idx, minlength=len(edges) + 1)[1:len(edges)]
+    return 0.5 * (edges[:-1] + edges[1:]), tot / np.maximum(cnt, 1)   # per (cycle/D)^2 cell
+
+def radial_profile(img, nbin=60):
+    n = img.shape[0]; c = (n - 1) / 2
+    yy, xx = np.mgrid[:n, :n]; r = np.hypot(xx - c, yy - c) * PLATE / OVERSAMPLE
+    edges = np.linspace(0, 500, nbin + 1); idx = np.digitize(r.ravel(), edges)
+    tot = np.bincount(idx, img.ravel(), minlength=nbin + 2)[1:nbin + 1]
+    cnt = np.bincount(idx, minlength=nbin + 2)[1:nbin + 1]
+    return 0.5 * (edges[:-1] + edges[1:]), tot / np.maximum(cnt, 1)
+
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12.5, 4.6))
+for label, scr, col in SCREENS:
+    f, P = wfe_psd(scr)
+    ax1.plot(f, P, color=col, label=f'{label}: {w.rms_nm(scr):.1f} nm RMS')
+ax1.set(xscale='log', yscale='log', xlabel='spatial frequency [cycles per aperture]',
+        ylabel=r'wavefront PSD [nm$^2$ per (cycle/D)$^2$]', xlim=(0.8, 70), ylim=(1e-6, 1e3))
+for sep, name in ((160, 'b'), (210, 'c')):
+    ax1.axvline(sep / LAM_D_MAS, color='0.6', ls=':', lw=1); ax1.text(sep / LAM_D_MAS, 3e2, name, ha='center', color='0.4')
+sec = ax1.secondary_xaxis('top', functions=(lambda f: f * LAM_D_MAS, lambda s: s / LAM_D_MAS))
+sec.set_xlabel('separation [mas]')
+ax1.legend(fontsize=8, loc='lower left', title='assumed wavefront spectra', title_fontsize=9)
+
+# where the light lands: azimuthal mean of the per-pixel stellar flux fraction, 10 mas jitter, fine grid -> per detector pixel
+pix = OVERSAMPLE ** 2
+psf0 = w.psf(np.zeros_like(S_STAT), 10.0)
+psf_stat = w.psf(S_STAT, 10.0)
+r, p0 = radial_profile(psf0); ax2.plot(r, p0 * pix, color='0.5', ls='--', label='Airy, S = 1')
+r, ps = radial_profile(psf_stat); ax2.plot(r, ps * pix, color='k', label='static S = 0.82')
+for label, scr, col in SCREENS[1:]:
+    d = w.psf(S_STAT + scr, 10.0) - psf_stat
+    d = d - azimuthal_mean_image(d)
+    r, pd = radial_profile(d ** 2)
+    ax2.plot(r, np.sqrt(pd) * pix, color=col, label=f'asymmetric residual, {label.split(" (")[0]}')
+for sep, name in ((160, 'b'), (210, 'c')):
+    ax2.axvline(sep, color='0.6', ls=':', lw=1)
+for name, p in PLANETS.items():
+    ax2.plot(p['sep_mas'], inst.line_rate(p['flux']) / inst.star_rate * 0.5, 'o', color='k', ms=5)
+ax2.set(yscale='log', xlabel='separation [mas]', ylabel='stellar flux fraction per pixel', xlim=(0, 500), ylim=(1e-9, 1e-1))
+ax2.set_title(f'stellar light and drift speckles at S = 0.82, 10 mas jitter, {DRIFT_NM} nm drift')
+ax2.legend(fontsize=8, loc='upper right')
+fig.tight_layout(); savefig(fig, 'fig15_wfe_psd')
+""")
+
+md(r"""
+Left: the static screen carries most of its variance at 1-3 cycles per aperture (the $f^{-2.5}$ slope) and falls
+four orders of magnitude by the pupil Nyquist frequency; the power-law drift is the same shape scaled down by
+$(2.8/46)^2$; the mid-frequency drift puts all of its 2.8 nm into 3-5 cycles per aperture, exactly where the planets are;
+the low-order drift has no power beyond 2 cycles per aperture. Right: the asymmetric residual of each drift, RMS per
+detector pixel, against the static PSF and the ideal Airy pattern; the dots are the planets' peak-pixel flux (half of
+the line flux in the brightest pixel). The mid-frequency drift is the most damaging per nanometre because its light
+lands at the planets; the low-order drift reaches them only through the static speckles it beats against.
+""")
+
 nb = new_notebook()
 nb["cells"] = cells
 nb["metadata"] = {"kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"}}
