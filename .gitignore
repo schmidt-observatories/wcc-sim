@@ -241,3 +241,6 @@ local/
 scripts/psf_no_scatter/
 .DS_Store
 .claude/
+
+# one-off study notebooks and their outputs: never published
+notebooks_scrap/
