@@ -96,3 +96,18 @@ def test_mag_limit_still_recorded_for_gaia_queries(monkeypatch, canned_catalog):
     f = pipeline.simulate_field(RA0, DEC0, shape=SHAPE, stamp_npix=33,
                                 mag_limit=19.5, add_noise=False)
     assert f.params["mag_limit"] == 19.5
+
+
+def test_row_without_g_is_dropped_and_fallback_is_recorded(canned_catalog):
+    """#10: a masked G is not a rate of zero or the value under the mask; the
+    row goes with a warning. The missing-BP star is flagged, the others not."""
+    from astropy.table import MaskedColumn
+
+    cat = canned_catalog.copy()
+    cat["phot_g_mean_mag"] = MaskedColumn(cat["phot_g_mean_mag"],
+                                          mask=[False, False, True, False, False])
+    with pytest.warns(UserWarning, match="without a G magnitude"):
+        f = run(canned_catalog, catalog=cat)
+    assert len(f.catalog) == 4
+    assert 2 not in list(f.catalog["source_id"])
+    assert f.catalog["spt_fallback"].tolist() == [False, False, False, True]

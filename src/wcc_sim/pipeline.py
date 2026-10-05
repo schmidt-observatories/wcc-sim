@@ -21,7 +21,8 @@ from .render import (
     star_saturated,
 )
 from .scatter import halo_for_sensorfilter
-from .starflux import rates_for_catalog, sky_and_dark_rates
+from .starflux import (color_fallback, column_floats, rates_for_catalog,
+                       sky_and_dark_rates)
 from .wcsutil import build_wcs
 from .wings import CombinedWing, fit_wing_model
 
@@ -236,10 +237,24 @@ def simulate_field(
             catalog = catalog[projected]
             xs, ys = xs[projected], ys[projected]
     if len(catalog):
+        has_g = np.isfinite(column_floats(catalog, "phot_g_mean_mag"))
+        if not has_g.all():
+            # A masked or NaN G has no count rate; it must not become a
+            # NaN stamp or, worse, read the value under the mask.
+            warnings.warn(
+                f"dropping {int((~has_g).sum())} catalog row(s) without a "
+                "G magnitude (masked or non-finite)",
+                UserWarning,
+            )
+            catalog = catalog[has_g]
+            xs, ys = xs[has_g], ys[has_g]
+    if len(catalog):
         rates, spts = rates_for_catalog(catalog, sensorfilter)
+        fallback = color_fallback(catalog)
     else:
         rates = np.array([])
         spts = np.array([], dtype=str)
+        fallback = np.array([], dtype=bool)
         xs = np.array([])
         ys = np.array([])
 
@@ -339,6 +354,7 @@ def simulate_field(
     catalog["x"] = np.asarray(xs, dtype=float)
     catalog["y"] = np.asarray(ys, dtype=float)
     catalog["spt"] = spts
+    catalog["spt_fallback"] = np.asarray(fallback, dtype=bool)
     catalog["rate_e_s"] = np.asarray(rates, dtype=float)
     catalog["psf_wavelength_nm"] = star_wavelength_nm
     in_image = (
