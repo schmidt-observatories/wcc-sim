@@ -45,6 +45,9 @@ def build_parser():
                    help="instrument-wide scattered fraction (default: FRED's "
                         "5.542e-3)")
     p.add_argument("--cache-dir", default=None, help="Gaia query cache directory")
+    p.add_argument("--gain-mode", default=None,
+                   help="readout gain mode for multi-mode detectors "
+                        "(qcmos: 'high' = 32x, clips at 552 e-; 'low' = 1x)")
     p.add_argument("-o", "--output", required=True, help="output FITS path")
     return p
 
@@ -73,6 +76,7 @@ def main(argv=None):
         scatter_fraction=args.scatter_fraction,
         cache_dir=args.cache_dir,
         write_clean=not args.no_clean,
+        gain_mode=args.gain_mode,
     )
     n_sat = int(field.saturation_mask.sum())
     print(
