@@ -58,10 +58,13 @@ def test_photometric_closure_vs_etc(canned_catalog):
     # outside the wing-model normalisation (0.65% remains even at 129 px;
     # that residual is the wing fit's, see #13/#14), not a rate error.
     f = run(single, add_noise=False, exptime=90.0, scatter=False, stamp_npix=65)
-    spt = f.catalog["spt"][0]
-    expected = rate_for_spt(spt, "zwo:r") * 90.0
-    assert expected > 0  # guard: a zero rate would make the closure check vacuous
-    assert _injected_star_e(f) == pytest.approx(expected, rel=0.01)
+    # The star's BP-RP (2.2) sits between M2V and M4V, so its rate is the
+    # colour interpolation (#21), bracketed by the two template rates; the
+    # rendered flux must close on the rate that was actually injected.
+    rate = float(f.catalog["rate_e_s"][0])
+    lo, hi = sorted(rate_for_spt(s, "zwo:r") for s in ("M2V", "M4V"))
+    assert lo < rate < hi
+    assert _injected_star_e(f) == pytest.approx(rate * 90.0, rel=0.01)
 
 
 def test_scatter_removes_the_scattered_fraction_from_the_star(canned_catalog):

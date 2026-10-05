@@ -3,6 +3,7 @@
 import warnings
 
 import numpy as np
+from astropy.coordinates import angular_separation
 
 
 def pick_target(catalog, target, tol_arcsec=2.0):
@@ -23,10 +24,14 @@ def pick_target(catalog, target, tol_arcsec=2.0):
     ra, dec = (float(v) for v in target)
     cat_ra = np.asarray(catalog["ra"], dtype=float)
     cat_dec = np.asarray(catalog["dec"], dtype=float)
-    cos_dec = np.cos(np.radians(dec))
-    sep = np.hypot((cat_ra - ra) * cos_dec, cat_dec - dec) * 3600.0
+    # Spherical, not a flat RA difference: (0.0001, 0) and (359.9999, 0)
+    # are 0.72 arcsec apart. Rows without a finite position never match.
+    sep = np.degrees(angular_separation(
+        np.radians(cat_ra), np.radians(cat_dec), np.radians(ra), np.radians(dec)
+    )) * 3600.0
+    sep = np.where(np.isfinite(sep), sep, np.inf)
     i = int(np.argmin(sep))
-    if sep[i] > tol_arcsec:
+    if not sep[i] <= tol_arcsec:
         raise ValueError(
             f"no catalog source within {tol_arcsec}\" of ({ra}, {dec}); "
             f"nearest is {sep[i]:.2f}\" away"

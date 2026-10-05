@@ -56,3 +56,18 @@ def test_pick_references_none_left_raises(phot_frames):
     huge = geometry_from_r_ap(6.0, r_in=9.0, r_out=200.0, centroid_box=13)
     with pytest.raises(ValueError, match="no usable reference stars"):
         pick_references(frame.catalog, 0, frame.image_e.shape, huge)
+
+
+def test_pick_target_uses_spherical_separation_across_the_ra_wrap():
+    """(0.0001, 0) and (359.9999, 0) are 0.72 arcsec apart; a flat RA
+    difference called it 360 degrees. A row without a position never wins."""
+    from astropy.table import Table
+
+    catalog = Table({
+        "source_id": [1, 2, 3],
+        "ra": [359.9999, np.nan, 10.0],
+        "dec": [0.0, 0.0, 0.0],
+    })
+    assert pick_target(catalog, (0.0001, 0.0)) == 0
+    with pytest.raises(ValueError, match="no catalog source within"):
+        pick_target(catalog, (180.0, 0.0))
