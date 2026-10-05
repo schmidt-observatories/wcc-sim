@@ -82,7 +82,7 @@ def test_psf_flux_matches_total(single_star_frame, star_frame, geom, model_psf):
     model = build_psf_model(
         star_frame.meta, oversample=OVERSAMPLE, psf_os=model_psf
     )
-    flux, flux_err, x_fit, y_fit = psf_photometry_frame(
+    flux, flux_err, x_fit, y_fit, fflags = psf_photometry_frame(
         star_frame,
         np.array([x_true + 0.3]),
         np.array([y_true - 0.2]),
@@ -97,3 +97,4 @@ def test_psf_flux_matches_total(single_star_frame, star_frame, geom, model_psf):
     assert flux[0] == pytest.approx(expected, rel=0.02)
     assert x_fit[0] == pytest.approx(x_true, abs=0.05)
     assert y_fit[0] == pytest.approx(y_true, abs=0.05)
+    assert list(fflags) == [0]  # a clean fit carries no FLAG_FIT
