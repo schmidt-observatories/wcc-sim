@@ -1,5 +1,6 @@
 """End-to-end WCC field simulation: Gaia -> rates -> PSF -> image -> FITS."""
 
+import warnings
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -8,10 +9,10 @@ from astropy.table import Table
 from astropy.wcs import WCS
 
 from .catalog import query_gaia
-from .chromatic import effective_psf_for_spt
+from .chromatic import effective_psf_for_spt, effective_wavelength_nm_for_spt
 from .detectors import get_geometry, make_base_simulation
 from .extended import render_extended
-from .fitswriter import build_hdulist, write_fits
+from .fitswriter import build_hdulist
 from .psf import DEFAULT_STAMP, render_oversampled_psf
 from .render import (
     add_noise_and_digitize,
@@ -55,6 +56,57 @@ class SimulatedField:
 
     def write(self, path, write_clean=True):
         self.to_hdulist(write_clean=write_clean).writeto(path, overwrite=True)
+
+
+def _validate_inputs(
+    ra, dec, focus, exptime, n_reads, mag_limit, oversample, shape,
+    scatter_fraction, wing_floor_sigma, catalog,
+):
+    """Reject bad inputs before the Gaia query or the ETC setup.
+
+    Everything here otherwise fails deep inside numpy/astropy/synphot with an
+    unrelated message, or is silently coerced (``focus=True`` is 1, an even
+    ``oversample`` shifts every star by 1/(2*oversample) px, a non-positive
+    ``wing_floor_sigma`` skips the wings while the core is still renormalised
+    to leave room for them).
+    """
+    if not (np.isfinite(ra) and 0.0 <= ra < 360.0):
+        raise ValueError(f"ra must be a finite value in [0, 360) deg, got {ra!r}")
+    if not (np.isfinite(dec) and -90.0 <= dec <= 90.0):
+        raise ValueError(f"dec must be a finite value in [-90, 90] deg, got {dec!r}")
+    if isinstance(focus, bool) or (focus is not None and focus not in (0, 1, 2)):
+        raise ValueError(f"focus must be 0, 1, or 2 (waves of defocus), got {focus!r}")
+    if not (np.isfinite(exptime) and exptime > 0.0):
+        raise ValueError(f"exptime must be a positive finite number of seconds, got {exptime!r}")
+    if isinstance(n_reads, bool) or int(n_reads) != n_reads or n_reads < 1:
+        raise ValueError(f"n_reads must be a positive integer, got {n_reads!r}")
+    if catalog is None and not np.isfinite(mag_limit):
+        raise ValueError(f"mag_limit must be finite, got {mag_limit!r}")
+    if (
+        isinstance(oversample, bool)
+        or int(oversample) != oversample
+        or oversample < 1
+        or oversample % 2 == 0
+    ):
+        raise ValueError(
+            f"oversample must be a positive odd integer (an even value puts the "
+            f"PSF peak between fine pixels), got {oversample!r}"
+        )
+    if shape is not None:
+        if len(shape) != 2 or any(int(n) != n or n < 1 for n in shape):
+            raise ValueError(f"shape must be (ny, nx) with positive integers, got {shape!r}")
+    if scatter_fraction is not None and not (
+        np.isfinite(scatter_fraction) and 0.0 < scatter_fraction <= 1.0
+    ):
+        raise ValueError(
+            f"scatter_fraction must be in (0, 1], got {scatter_fraction!r}"
+        )
+    if not (np.isfinite(wing_floor_sigma) and wing_floor_sigma > 0.0):
+        raise ValueError(
+            f"wing_floor_sigma must be > 0, got {wing_floor_sigma!r}: with no floor "
+            "the wings and halo are not drawn but the core is still renormalised "
+            "to leave room for them, so flux is lost"
+        )
 
 
 def simulate_field(
@@ -117,12 +169,17 @@ def simulate_field(
     so `wings=False` turns it off as well; `params["scatter"]` reports what
     actually ran.
 
-    `wavelength_nm` overrides the wavelength the Airy core is computed at
-    (default: the sensorfilter's central wavelength). It sets PSF *geometry*
-    only -- the synthetic photometry still uses the sensorfilter's bandpass,
-    so the star's electron rate is unchanged. Use it to put the core at the
-    450 nm of the FRED stray-light run. Ignored for focus != 0, which uses
-    fixed Huygens images.
+    In focus, each star's Airy core is built at the effective wavelength of
+    its spectral template through the band -- what wcc_etc does for the same
+    star -- rather than at the filter pivot, which is ~130 nm too blue for an
+    M dwarf in the broad band (23% too high a peak pixel). The per-star value
+    is recorded in the CAT column `psf_wavelength_nm`. `wavelength_nm`
+    overrides this for *every* star (PSF geometry only -- the synthetic
+    photometry still uses the full bandpass, so electron rates are
+    unchanged); use it to put the core at the 450 nm of the FRED stray-light
+    run. Ignored for focus != 0, which uses fixed Huygens images. The
+    field-level PSF (wing fit, extended-source kernels, PSF report) stays at
+    the pivot or override wavelength, recorded in `PSFWAVE`.
 
     `report=path` writes a PDF+PNG showing the PSF's radial profile split
     into its Airy and scattered-light terms (see wcc_sim.psfreport).
@@ -135,12 +192,14 @@ def simulate_field(
     for extended components; it is a documented no-op for focus != 0
     (the defocus PSF has no wavelength model).
     """
+    _validate_inputs(
+        ra, dec, focus, exptime, n_reads, mag_limit, oversample, shape,
+        scatter_fraction, wing_floor_sigma, catalog,
+    )
     sim = make_base_simulation(sensorfilter)
     geom = get_geometry(sensorfilter, sim=sim)
     if focus is None:
         focus = geom.default_focus
-    if focus not in (0, 1, 2):
-        raise ValueError(f"focus must be 0, 1, or 2, got {focus!r}")
     if shape is None:
         shape = (geom.ny, geom.nx)
     ny, nx = shape
@@ -151,18 +210,33 @@ def simulate_field(
         0.5 * np.hypot(nx, ny) * geom.plate_scale_mas / 1000.0
     )
     radius_arcsec = half_diag_arcsec + 10.0
-    if catalog is None:
+    queried = catalog is None
+    if queried:
         catalog = query_gaia(
             ra, dec, radius_arcsec, mag_limit=mag_limit, cache_dir=cache_dir
         )
     catalog = catalog.copy()
 
     if len(catalog):
-        rates, spts = rates_for_catalog(catalog, sensorfilter)
         xs, ys = wcs.world_to_pixel_values(
             np.asarray(catalog["ra"], dtype=float),
             np.asarray(catalog["dec"], dtype=float),
         )
+        xs, ys = np.atleast_1d(xs), np.atleast_1d(ys)
+        projected = np.isfinite(xs) & np.isfinite(ys)
+        if not projected.all():
+            # Non-finite coordinates, or a user-catalog star more than 90 deg
+            # from the pointing: there is no tangent-plane position to draw.
+            warnings.warn(
+                f"dropping {int((~projected).sum())} catalog row(s) that do not "
+                "project onto the tangent plane (non-finite coordinates or more "
+                "than 90 deg from the pointing)",
+                UserWarning,
+            )
+            catalog = catalog[projected]
+            xs, ys = xs[projected], ys[projected]
+    if len(catalog):
+        rates, spts = rates_for_catalog(catalog, sensorfilter)
     else:
         rates = np.array([])
         spts = np.array([], dtype=str)
@@ -204,6 +278,12 @@ def simulate_field(
         wing_floor_e = float(wing_floor_sigma) * sigma_floor
 
     chromatic_active = bool(chromatic) and focus == 0
+    # Per-template PSFs in focus: spectrum-weighted (7 nodes) when chromatic,
+    # otherwise monochromatic at each template's effective wavelength. An
+    # explicit wavelength_nm pins every star to one PSF instead.
+    per_spt = focus == 0 and len(catalog) > 0 and (chromatic_active or wavelength_nm is None)
+    n_nodes = 7 if chromatic_active else 1
+    star_wavelength_nm = np.full(len(catalog), psf_wavelength_nm, dtype=float)
 
     def _wing_for(psf):
         if not wings:
@@ -211,14 +291,16 @@ def simulate_field(
         core = fit_wing_model(bin_oversampled(psf, oversample))
         return core if halo is None else CombinedWing(core=core, halo=halo)
 
-    if chromatic_active and len(catalog):
+    if per_spt:
         image_sources = np.zeros(shape, dtype=np.float32)
         for spt in np.unique(spts):
             sel = spts == spt
             psf_spt = effective_psf_for_spt(
                 sim, sensorfilter, spt, 0.0, focus, oversample,
                 stamp_npix=n_stamp, jitter_sigma_mas=jitter_sigma_mas,
+                n_nodes=n_nodes,
             )
+            star_wavelength_nm[sel] = effective_wavelength_nm_for_spt(sensorfilter, str(spt))
             image_sources += render_scene(
                 shape, xs[sel], ys[sel], rates[sel] * exptime, psf_spt,
                 oversample, wing=_wing_for(psf_spt), floor_e=wing_floor_e,
@@ -258,6 +340,7 @@ def simulate_field(
     catalog["y"] = np.asarray(ys, dtype=float)
     catalog["spt"] = spts
     catalog["rate_e_s"] = np.asarray(rates, dtype=float)
+    catalog["psf_wavelength_nm"] = star_wavelength_nm
     in_image = (
         (catalog["x"] > -0.5) & (catalog["x"] < nx - 0.5)
         & (catalog["y"] > -0.5) & (catalog["y"] < ny - 0.5)
@@ -285,7 +368,8 @@ def simulate_field(
             if jitter_sigma_mas is not None
             else float(sim.telescope.jitter_sigma.to("mas").value)
         ),
-        "mag_limit": float(mag_limit),
+        # the Gaia limit only applies when the catalog came from Gaia
+        "mag_limit": float(mag_limit) if queried else None,
         "seed": seed,
         "gaia_radius_arcsec": float(radius_arcsec),
         "n_sources": int(len(catalog)),

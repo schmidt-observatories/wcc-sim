@@ -6,6 +6,8 @@ plate scale divided by `oversample`, npix multiplied by it). Jitter blur is
 applied by wcc_etc at the fine plate scale.
 """
 
+import numpy as np
+from scipy.ndimage import shift as _nd_shift
 from wcc_etc import DEFOCUS_1WAVE_PATH, DEFOCUS_2WAVE_PATH, AiryPSF, DefocusPSF
 from wcc_etc.psfsim import DetectorPSFContext
 
@@ -25,6 +27,32 @@ def make_psf_source(focus):
     raise ValueError(f"focus must be 0, 1, or 2 (waves of defocus), got {focus!r}")
 
 
+def centroid_offset(psf):
+    """(dx, dy) of the flux centroid from the grid centre (n-1)/2, in pixels."""
+    n = psf.shape[0]
+    i = np.arange(n, dtype=float)
+    total = psf.sum()
+    cx = (psf.sum(axis=0) @ i) / total
+    cy = (psf.sum(axis=1) @ i) / total
+    c = (n - 1) / 2.0
+    return float(cx - c), float(cy - c)
+
+
+def recenter_on_centroid(psf):
+    """Shift `psf` so its flux centroid sits on the grid centre; renormalize.
+
+    The Zemax Huygens defocus images put the chief ray at sample (129, 129)
+    1-based and are written top row first, so after loading their centroid
+    sits ~(+0.5, -0.7) detector px from the stamp centre wcc_sim assumes.
+    Rendered as-is, every defocused star lands ~15 mas from its catalog
+    position -- a WCS zero-point error. Recentring on the centroid makes
+    the catalog position the quantity a centroider recovers (issue #18).
+    """
+    dx, dy = centroid_offset(psf)
+    out = _nd_shift(psf, (-dy, -dx), order=1, mode="constant", cval=0.0)
+    return out / out.sum()
+
+
 def render_oversampled_psf(
     sim, focus, oversample=11, stamp_npix=None, jitter_sigma_mas=None,
     wavelength_m=None,
@@ -32,7 +60,8 @@ def render_oversampled_psf(
     """Normalized PSF on a (stamp_npix*oversample)^2 fine grid, centered.
 
     `wavelength_m` overrides the sensor central wavelength (Airy path only;
-    DefocusPSF is a fixed Huygens image and ignores wavelength).
+    DefocusPSF is a fixed Huygens image and ignores wavelength). Defocus
+    PSFs are recentred on their flux centroid (see recenter_on_centroid).
     """
     source = make_psf_source(focus)
     if stamp_npix is None:
@@ -60,4 +89,7 @@ def render_oversampled_psf(
         jitter_sigma_mas=jitter_sigma_mas,
         oversample=3,  # internal supersampling of the fine grid (Airy path)
     )
-    return source.render(ctx)
+    psf = source.render(ctx)
+    if focus != 0:
+        psf = recenter_on_centroid(psf)
+    return psf

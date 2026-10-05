@@ -36,7 +36,7 @@ _CARDS = {
     "sky_e_s": ("SKYRATE", "[e-/s/pix] sky background rate"),
     "well_depth": ("WELLDEP", "[e-] full well (empty if None)"),
     "wings": ("WINGS", "analytic PSF wing extension applied"),
-    "wavelength_nm": ("PSFWAVE", "[nm] wavelength the Airy core was built at"),
+    "wavelength_nm": ("PSFWAVE", "[nm] field PSF wavelength (per-star: CAT)"),
     "scatter": ("SCATTER", "measured scattered-light halo applied"),
     "scatter_fraction": ("SCATFRAC", "instrument-wide scattered fraction"),
     "scatter_file": ("SCATFILE", "FRED stray-light map the halo came from"),

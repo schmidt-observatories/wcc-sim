@@ -114,3 +114,41 @@ def test_longer_wavelength_widens_airy():
     red = render_oversampled_psf(sim, 0, oversample=3, stamp_npix=33,
                                  wavelength_m=900e-9)
     assert _rms_radius(red) > _rms_radius(blue)
+
+
+@pytest.mark.parametrize("sensorfilter, focus", [("zwo:r", 1), ("zwo:r", 2), ("qcmos:bb", 2)])
+def test_defocus_psf_is_centred_on_its_centroid(sensorfilter, focus):
+    """Issue #18: the raw Huygens images sit ~(+0.5, -0.7) px off centre."""
+    from wcc_sim.detectors import make_base_simulation
+    from wcc_sim.psf import centroid_offset, render_oversampled_psf
+
+    os_ = 11
+    sim = make_base_simulation(sensorfilter)
+    p = render_oversampled_psf(sim, focus=focus, oversample=os_, jitter_sigma_mas=0.0)
+    dx, dy = centroid_offset(p)
+    assert abs(dx / os_) < 0.02 and abs(dy / os_) < 0.02
+    assert p.sum() == pytest.approx(1.0, rel=1e-9)
+
+
+def test_defocused_star_lands_on_its_catalog_position():
+    """End to end: noiseless 2-wave star, centroid within 0.05 px of the WCS."""
+    from astropy.table import Table
+
+    from wcc_sim import simulate_field
+
+    ra0, dec0 = 150.1, 2.2
+    cat = Table({
+        "source_id": np.array([0], dtype=np.int64), "ra": [ra0], "dec": [dec0],
+        "phot_g_mean_mag": [14.0], "phot_bp_mean_mag": [14.4],
+        "phot_rp_mean_mag": [13.6],
+    })
+    f = simulate_field(ra0, dec0, sensorfilter="zwo:r", focus=2, catalog=cat,
+                       shape=(301, 301), add_noise=False, wings=False,
+                       jitter_sigma_mas=0.0)
+    img = f.image_clean - np.median(f.image_clean)
+    yy, xx = np.mgrid[: img.shape[0], : img.shape[1]]
+    w = np.clip(img, 0, None)
+    cx, cy = (w * xx).sum() / w.sum(), (w * yy).sum() / w.sum()
+    x0, y0 = f.catalog["x"][0], f.catalog["y"][0]
+    assert cx == pytest.approx(x0, abs=0.05)
+    assert cy == pytest.approx(y0, abs=0.05)
