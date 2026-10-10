@@ -23,6 +23,8 @@ _FLAG_NAMES = {
     flagbits.FLAG_CENTROID: "centroid",
     flagbits.FLAG_SATURATED: "saturated",
     flagbits.FLAG_EDGE: "edge",
+    flagbits.FLAG_FIT: "fit",
+    flagbits.FLAG_NOFLUX: "noflux",
 }
 
 
@@ -43,21 +45,25 @@ def _star_series(measurements, star):
     return rows[np.argsort(rows["frame"])]
 
 
-def _ref_relative_flux(series, lc):
+def _ref_relative_flux(series, lc, used=True):
     """A reference star's own differential LC against the other refs.
 
-    rel_j = flux_j / (ensemble - flux_j), with the star's contribution to
-    the ensemble error removed; both normalized by the median over frames.
+    rel_j = flux_j / (ensemble - flux_j) when the star is in the ensemble
+    (its contribution to the ensemble error removed), flux_j / ensemble
+    otherwise; both normalized by the median over the accepted frames. Uses
+    the same variance form as `ensemble_ratio`, so a zero flux is finite.
     """
     flux = np.asarray(series["flux_e"], dtype=float)
     err = np.asarray(series["flux_err_e"], dtype=float)
-    ens = np.asarray(lc["flux_ens"], dtype=float) - flux
-    ens_err = np.sqrt(
-        np.clip(np.asarray(lc["flux_ens_err"], dtype=float) ** 2 - err**2, 0, None)
-    )
-    rel = flux / ens
-    rel_err = np.abs(rel) * np.hypot(err / flux, ens_err / ens)
-    median = np.median(rel)
+    ens = np.asarray(lc["flux_ens"], dtype=float)
+    ens_err = np.asarray(lc["flux_ens_err"], dtype=float)
+    if used:
+        ens = ens - flux
+        ens_err = np.sqrt(np.clip(ens_err**2 - err**2, 0, None))
+    with np.errstate(divide="ignore", invalid="ignore"):
+        rel = np.where(ens > 0, flux / ens, np.nan)
+        rel_err = np.sqrt(err**2 / ens**2 + flux**2 * ens_err**2 / ens**4)
+    median = np.nanmedian(rel) if np.isfinite(rel).any() else np.nan
     return rel / median, rel_err / median
 
 
@@ -88,23 +94,33 @@ def compute_metrics(result):
     meas = result.measurements
     stars = result.stars
 
+    # Accepted samples: frames with a defined relative flux (no FLAG_NOFLUX),
+    # the same rows the light curve and the live view treat as measurements.
+    ok = np.isfinite(np.asarray(lc["rel_flux_norm"], dtype=float))
+    lc = lc[ok]
     rel = np.asarray(lc["rel_flux_norm"], dtype=float)
     rel_err = np.asarray(lc["rel_flux_norm_err"], dtype=float)
-    rms = float(np.std(rel))
-    mad_rms = float(1.4826 * np.median(np.abs(rel - np.median(rel))))
-    med_err = float(np.median(rel_err))
+    rms = float(np.std(rel)) if rel.size else np.nan
+    mad_rms = (float(1.4826 * np.median(np.abs(rel - np.median(rel))))
+               if rel.size else np.nan)
+    med_err = float(np.median(rel_err)) if rel.size else np.nan
 
+    used = (np.asarray(stars["used"], dtype=bool) if "used" in stars.colnames
+            else np.ones(len(stars), dtype=bool))
+    frames_ok = np.asarray(lc["frame"])
     star_rms, star_err = [rms], [med_err]
-    for star in np.asarray(stars["star"])[1:]:
+    for j, star in enumerate(np.asarray(stars["star"])[1:], start=1):
         series = _star_series(meas, star)
-        if len(stars) > 2:
-            rel_j, err_j = _ref_relative_flux(series, lc)
+        series = series[np.isin(series["frame"], frames_ok)]
+        if used.sum() > 1:
+            rel_j, err_j = _ref_relative_flux(series, lc, used=bool(used[j]))
         else:  # single reference: its own LC is just the mirrored target LC
             rel_j, err_j = 1.0 / rel, rel_err / rel**2
-        star_rms.append(float(np.std(rel_j)))
-        star_err.append(float(np.median(err_j)))
+        star_rms.append(float(np.nanstd(rel_j)))
+        star_err.append(float(np.nanmedian(err_j)))
 
     tgt = _star_series(meas, 0)
+    tgt = tgt[np.isin(tgt["frame"], frames_ok)]
     cx = np.asarray(tgt["x"], dtype=float)
     cy = np.asarray(tgt["y"], dtype=float)
 

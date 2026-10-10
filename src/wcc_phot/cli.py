@@ -91,8 +91,8 @@ def main(argv=None):
         result.lightcurve.write(args.lc_csv, format="ascii.ecsv", overwrite=True)
 
     lc = result.lightcurve
-    rms_ppm = 1e6 * float(np.std(lc["rel_flux_norm"]))
-    err_ppm = 1e6 * float(np.median(lc["rel_flux_norm_err"]))
+    rms_ppm = 1e6 * float(np.nanstd(lc["rel_flux_norm"]))
+    err_ppm = 1e6 * float(np.nanmedian(lc["rel_flux_norm_err"]))
     print(
         f"Wrote {args.output}: {result.params['n_frames']} frames, "
         f"target {result.params['target_source_id']} "

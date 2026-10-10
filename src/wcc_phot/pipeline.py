@@ -12,7 +12,7 @@ from .apphot import aperture_photometry_frame
 from .centroid import centroid_stars
 from .geometry import default_geometry, geometry_from_r_ap, render_model_psf
 from .io import frame_meta, load_frame
-from .lightcurve import build_lightcurve
+from .lightcurve import build_lightcurve, ensemble_ratio, usable_references
 from .psfphot import build_psf_model, psf_photometry_frame
 from .select import pick_references, pick_target
 
@@ -92,7 +92,7 @@ def run_photometry(
     index is used otherwise. `on_frame` (optional callable, e.g. a
     wcc_phot.live.LiveViewer) is called after each frame is measured with
     an event dict (frame, n_frames, time, image_e, wcs, x, y, roles,
-    geom, flux_e, flux_err_e, flags, rel_flux, rel_flux_err) for live
+    geom, flux_e, flux_err_e, flags, rel_flux, rel_flux_err, n_ref) for live
     display or custom hooks; the dict holds that frame's full-resolution
     image, so a callback that *retains* it (rather than consuming it in
     place) pins every frame in memory and defeats the streaming above.
@@ -171,6 +171,7 @@ def run_photometry(
     model = build_psf_model(meta0, oversample=oversample, psf_os=psf_os) if method == "psf" else None
 
     rows = []
+    live_clean = np.ones(len(ref_idx), dtype=bool)
     for k in range(n_frames):
         fr = frame0 if k == 0 else load_frame(frames[k])
         x_init, y_init = fr.wcs.world_to_pixel_values(ras, decs)
@@ -180,15 +181,18 @@ def run_photometry(
         flux, flux_err, bkg, aflags = aperture_photometry_frame(fr, x, y, geom)
         flags = cflags | aflags
         if method == "psf":
-            flux, flux_err, x, y = psf_photometry_frame(
+            flux, flux_err, x, y, fflags = psf_photometry_frame(
                 fr, x, y, flux, model, geom
             )
+            flags = flags | fflags
+        # References flagged in any frame so far leave the live ensemble
+        # for good; the final light curve applies the same rule over all
+        # frames (usable_references), so the two agree unless a reference
+        # is first flagged after the frame being shown.
+        live_clean &= flags[1:] == 0
         if on_frame is not None:
-            flux_ens = float(np.sum(flux[1:]))
-            err_ens = float(np.sqrt(np.sum(flux_err[1:] ** 2)))
-            rel = float(flux[0]) / flux_ens
-            rel_err = abs(rel) * float(
-                np.hypot(flux_err[0] / flux[0], err_ens / flux_ens)
+            rel, rel_err, _, _, _ = ensemble_ratio(
+                flux[0], flux_err[0], flux[1:][live_clean], flux_err[1:][live_clean]
             )
             on_frame(
                 {
@@ -206,6 +210,7 @@ def run_photometry(
                     "flags": flags,
                     "rel_flux": rel,
                     "rel_flux_err": rel_err,
+                    "n_ref": int(live_clean.sum()),
                 }
             )
         for j in range(len(indices)):
@@ -227,12 +232,21 @@ def run_photometry(
                 }
             )
     measurements = Table(rows)
-    lightcurve = build_lightcurve(measurements)
+    used = usable_references(measurements)
+    lightcurve = build_lightcurve(measurements, refs=used)
+    # Selection provenance: which references made the ensemble and how
+    # many frames flagged each star, so a dropped reference is inspectable.
+    star_ids = np.asarray(stars["star"])
+    stars["used"] = np.isin(star_ids, used)
+    stars["n_flagged"] = [
+        int(np.count_nonzero(measurements["flags"][measurements["star"] == s]))
+        for s in star_ids
+    ]
 
     params = {
         "method": method,
         "target_source_id": int(source_ids[0]),
-        "n_ref": len(ref_idx),
+        "n_ref": len(used),
         "n_frames": n_frames,
         "sensorfilter": meta0["sensorfilter"],
         "focus": int(meta0["focus"]),

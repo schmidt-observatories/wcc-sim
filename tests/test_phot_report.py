@@ -60,7 +60,9 @@ def test_compute_metrics(phot_result):
     assert np.all(metrics["star_err"] > 0)
     # constant stars: scatter should be within a few times the prediction
     assert metrics["rms_over_err"] < 5
-    assert metrics["flag_counts"] == {"centroid": 0, "saturated": 0, "edge": 0}
+    assert metrics["flag_counts"] == {
+        "centroid": 0, "saturated": 0, "edge": 0, "fit": 0, "noflux": 0
+    }
 
 
 def test_binned_rms_white_noise_scaling():
