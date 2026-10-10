@@ -6,6 +6,7 @@ import numpy as np
 from astropy import units as u
 from wcc_etc.psfsim import saturation_mask_from_image_e
 
+from .detectors import saturation_level_e
 from .starflux import sky_and_dark_rates
 
 
@@ -184,8 +185,7 @@ def add_noise_and_digitize(image_sources_e, sim, exptime, n_reads, rng, add_nois
     per_frame = image_clean / n_reads
     satmask = saturation_mask_from_image_e(sensor, per_frame)
 
-    well = sensor.meta.get("well_depth")
-    cap_frame_e = adc_max * gain if well is None else min(float(well), adc_max * gain)
+    cap_frame_e = saturation_level_e(sensor)
     expectation = np.minimum(image_clean, np.float32(n_reads * cap_frame_e))
 
     if add_noise:

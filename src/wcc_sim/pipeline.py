@@ -10,7 +10,7 @@ from astropy.wcs import WCS
 
 from .catalog import query_gaia
 from .chromatic import effective_psf_for_spt, effective_wavelength_nm_for_spt
-from .detectors import get_geometry, make_base_simulation
+from .detectors import get_geometry, make_base_simulation, saturation_level_e
 from .extended import render_extended
 from .fitswriter import build_hdulist
 from .psf import DEFAULT_STAMP, render_oversampled_psf
@@ -137,6 +137,7 @@ def simulate_field(
     extended_sources=None,
     chromatic=False,
     wing_floor_sigma=0.1,
+    gain_mode=None,
 ):
     """Simulate one WCC detector image of the Gaia field at (ra, dec).
 
@@ -192,12 +193,18 @@ def simulate_field(
     PSFs — per spectral type for point sources and per (template, ebv)
     for extended components; it is a documented no-op for focus != 0
     (the defocus PSF has no wavelength model).
+
+    `gain_mode` picks the readout gain for detectors that have several. The
+    qCMOS defaults to its 32x photon-number-resolving mode, whose 12-bit ADC
+    clips at 552 e- per frame, 15x below the 7500 e- well; `gain_mode="low"`
+    (1x) lets the well clip first. The ceiling that applied is recorded as
+    `params["saturation_e"]` (header SATLEVEL) and the mode as GAINMODE.
     """
     _validate_inputs(
         ra, dec, focus, exptime, n_reads, mag_limit, oversample, shape,
         scatter_fraction, wing_floor_sigma, catalog,
     )
-    sim = make_base_simulation(sensorfilter)
+    sim = make_base_simulation(sensorfilter, gain_mode=gain_mode)
     geom = get_geometry(sensorfilter, sim=sim)
     if focus is None:
         focus = geom.default_focus
@@ -398,6 +405,8 @@ def simulate_field(
         "pixel_size_um": float(geom.pixel_size_um),
         "plate_scale_mas": float(geom.plate_scale_mas),
         "gain": float(sim.sensor.gain.to(u.electron / u.ct).value),
+        "gain_mode": gain_mode,
+        "saturation_e": float(saturation_level_e(sim.sensor)),
         "read_noise": float(sim.sensor.read_noise.value),
         "dark_e_s": dark,
         "sky_e_s": sky,

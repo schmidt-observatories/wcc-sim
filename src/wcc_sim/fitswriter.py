@@ -31,6 +31,8 @@ _CARDS = {
     "add_noise": ("ADDNOISE", "noise realization applied"),
     "pixel_size_um": ("PIXSZUM", "[micron] detector pixel pitch"),
     "gain": ("GAIN", "[e-/ADU] sensor gain"),
+    "gain_mode": ("GAINMODE", "readout gain mode (empty if single-mode)"),
+    "saturation_e": ("SATLEVEL", "[e-] per-frame ceiling: min(well, ADC x gain)"),
     "read_noise": ("RDNOISE", "[e-] read noise per frame"),
     "dark_e_s": ("DARK", "[e-/s/pix] dark current"),
     "sky_e_s": ("SKYRATE", "[e-/s/pix] sky background rate"),

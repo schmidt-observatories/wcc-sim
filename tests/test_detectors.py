@@ -39,3 +39,23 @@ def test_unknown_sensorfilter_with_explicit_sim():
     sim = make_base_simulation("zwo:r")
     with pytest.raises(ValueError, match="zwo:r"):
         get_geometry("nope:x", sim=sim)
+
+
+def test_qcmos_saturation_ceiling_follows_the_gain_mode():
+    """#17: the 12-bit ADC x 0.1348 e-/ADU clips at 552 e- in the 32x high
+    gain mode, 15x below the 7500 e- well; the 1x low gain mode lets the
+    well clip first."""
+    from wcc_sim.detectors import make_base_simulation, saturation_level_e
+
+    high = saturation_level_e(make_base_simulation("qcmos:bb", gain_mode="high").sensor)
+    low = saturation_level_e(make_base_simulation("qcmos:bb", gain_mode="low").sensor)
+    assert high == pytest.approx(4095 * 0.1348, rel=1e-3)
+    assert low == pytest.approx(7500.0)
+    assert saturation_level_e(make_base_simulation("zwo:r").sensor) > 1e4
+
+
+def test_unknown_gain_mode_is_rejected():
+    from wcc_sim.detectors import make_base_simulation
+
+    with pytest.raises(ValueError, match="gain_mode"):
+        make_base_simulation("qcmos:bb", gain_mode="medium")

@@ -98,6 +98,24 @@ def test_mag_limit_still_recorded_for_gaia_queries(monkeypatch, canned_catalog):
     assert f.params["mag_limit"] == 19.5
 
 
+def test_gain_mode_is_recorded_and_moves_the_saturation_ceiling(canned_catalog):
+    """#17: the qCMOS high-gain ADC ceiling (552 e-) saturates stars the low
+    gain mode (well-limited, 7500 e-) does not; both are written to the
+    header so photometry knows which ceiling applied."""
+    from wcc_sim.fitswriter import _header_from
+
+    kw = dict(sensorfilter="qcmos:bb", shape=SHAPE, stamp_npix=33, seed=1,
+              add_noise=False, catalog=canned_catalog, exptime=0.05)
+    from wcc_sim import simulate_field
+
+    high = simulate_field(RA0, DEC0, gain_mode="high", **kw)
+    low = simulate_field(RA0, DEC0, gain_mode="low", **kw)
+    assert high.params["saturation_e"] == pytest.approx(4095 * 0.1348, rel=1e-3)
+    assert low.params["saturation_e"] == pytest.approx(7500.0)
+    assert high.saturation_mask.sum() > low.saturation_mask.sum()
+    hdr = _header_from(low.params, low.wcs)
+    assert hdr["GAINMODE"] == "low" and hdr["SATLEVEL"] == pytest.approx(7500.0)
+
 def test_row_without_g_is_dropped_and_fallback_is_recorded(canned_catalog):
     """#10: a masked G is not a rate of zero or the value under the mask; the
     row goes with a warning. The missing-BP star is flagged, the others not."""
