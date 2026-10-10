@@ -18,7 +18,8 @@ from astropy.table import Table, vstack
 
 from .astrometry import crossmatch, propagate
 from .catalog import GAIA_EPOCH
-from .starflux import bp_rp_for_spt, g_minus_v_at_b_v, spt_from_b_v
+from .starflux import (bp_rp_for_spt, column_floats, g_minus_v_at_b_v,
+                       spt_from_b_v)
 
 #: VizieR table: the Extended Hipparcos Compilation (Anderson & Francis 2012).
 XHIP_CATALOG = "V/137D/XHIP"
@@ -129,17 +130,7 @@ def query_bright(ra_deg, dec_deg, radius_arcsec, cache_dir=None):
     return out
 
 
-def _floats(cat, name, default=np.nan):
-    """Column `name` as float, with masked and non-finite entries replaced.
-
-    `np.asarray` on a MaskedColumn returns the data *under* the mask -- 0.0
-    for a value astropy read back from the ECSV cache -- so a magnitude that
-    was never measured would be used as if it had been. Read the mask itself.
-    """
-    col = cat[name]
-    masked = np.ma.getmaskarray(np.ma.asarray(col))
-    values = np.asarray(np.ma.getdata(col), dtype=float)
-    return np.where(masked | ~np.isfinite(values), default, values)
+_floats = column_floats
 
 
 def to_gaia_like(bright):
@@ -152,8 +143,8 @@ def to_gaia_like(bright):
     interpolation matters: the nearest template's own G-V would make G a
     step function of colour, 0.55 mag across the M2V/M4V boundary for a
     0.015 mag change in B-V. BP and RP are set from the chosen template's
-    tabulated BP-RP, so `spt_from_bp_rp` independently recovers the type and
-    `rates_for_catalog` needs no change at all. No empirical colour relation
+    synthetic BP-RP, so `spt_from_bp_rp` recovers the type and the colour
+    interpolation in `rates_for_catalog` lands on that template's own rate. No empirical colour relation
     is involved.
 
     The template set is dwarfs-only, so a giant is assigned a dwarf's G-V:

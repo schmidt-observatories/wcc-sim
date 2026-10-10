@@ -1,9 +1,11 @@
 """Convert Gaia photometry to WCC detector count rates via wcc_etc.
 
-Each star: BP-RP -> nearest Pickles dwarf type; that spectrum normalized to
-the star's G mag (vegamag) in the Gaia DR3 G bandpass; integrated through the
-instrument throughput by wcc_etc. Rates are memoized per (spt, sensorfilter)
-at G = REF_MAG and scaled analytically per star.
+Each star: BP-RP -> nearest Pickles dwarf template for the SED (and the PSF
+colour); the count rate is interpolated in log(rate) between the templates
+bracketing the star's colour. Each template is normalized to G = REF_MAG
+(vegamag) in the Gaia DR3 G bandpass and integrated through the instrument
+throughput by wcc_etc; rates are memoized per (spt, sensorfilter) and scaled
+analytically per star.
 """
 
 import os
@@ -21,10 +23,15 @@ REF_MAG = 15.0
 _RATE_CACHE = {}
 
 
-@lru_cache(maxsize=1)
-def gaia_g_bandpass():
-    """Gaia DR3 G passband (SVO FPS: GAIA/GAIA3.G) as a SpectralElement."""
-    wave, trans = np.loadtxt(os.path.join(DATA_DIR, "gaia_dr3_g.dat"), unpack=True)
+@lru_cache(maxsize=3)
+def gaia_bandpass(band="g"):
+    """Gaia DR3 passband (SVO FPS GAIA/GAIA3.G, .Gbp, .Grp) as a SpectralElement."""
+    band = band.lower()
+    if band not in ("g", "bp", "rp"):
+        raise ValueError(f"band must be 'g', 'bp' or 'rp', got {band!r}")
+    wave, trans = np.loadtxt(
+        os.path.join(DATA_DIR, f"gaia_dr3_{band}.dat"), unpack=True
+    )
     return SpectralElement(
         Empirical1D,
         points=wave * u.AA,
@@ -34,25 +41,29 @@ def gaia_g_bandpass():
     )
 
 
-@lru_cache(maxsize=1)
-def _spt_table():
-    path = os.path.join(DATA_DIR, "bp_rp_to_spt.csv")
-    spts = np.loadtxt(path, delimiter=",", skiprows=1, usecols=0, dtype=str)
-    colors = np.loadtxt(path, delimiter=",", skiprows=1, usecols=1)
-    return spts, colors
+def gaia_g_bandpass():
+    """Gaia DR3 G passband (SVO FPS: GAIA/GAIA3.G) as a SpectralElement."""
+    return gaia_bandpass("g")
 
 
-def spt_from_bp_rp(bp_rp):
-    """Nearest-neighbor Pickles dwarf type for BP-RP; NaN -> 'G2V'."""
-    spts, colors = _spt_table()
-    bp_rp = np.atleast_1d(
-        np.ma.filled(np.ma.masked_invalid(bp_rp), np.nan).astype(float)
-    )
-    out = np.full(bp_rp.shape, "G2V", dtype=object)
-    ok = np.isfinite(bp_rp)
-    idx = np.abs(bp_rp[ok, None] - colors[None, :]).argmin(axis=1)
-    out[ok] = spts[idx]
-    return out.astype(str)
+def column_floats(cat, name, default=np.nan):
+    """Column `name` as float, with masked and non-finite entries -> `default`.
+
+    `np.asarray` on a MaskedColumn returns the data *under* the mask (0.0 for
+    a value astropy read back from an ECSV cache), so a magnitude that was
+    never measured would be used as if it had been: a masked BP with 0
+    underneath turned a G = 18 star into an O5V. Read the mask itself.
+    """
+    col = cat[name]
+    masked = np.ma.getmaskarray(np.ma.asarray(col))
+    values = np.asarray(np.ma.getdata(col), dtype=float)
+    return np.where(masked | ~np.isfinite(values), default, values)
+
+
+def _finite(values):
+    """Array-like, possibly masked -> 1-d float array with NaN where missing."""
+    arr = np.ma.masked_invalid(np.ma.asarray(values, dtype=float))
+    return np.atleast_1d(np.ma.filled(arr, np.nan))
 
 
 @lru_cache(maxsize=1)
@@ -70,16 +81,40 @@ def _synthetic_color_table():
     return spts, b_v, g_v
 
 
+@lru_cache(maxsize=1)
+def _spt_table():
+    """(spts, synthetic Gaia DR3 BP-RP) per Pickles dwarf template.
+
+    Synthetic, from the same spectra the rates come from, so a template's
+    colour maps back to itself. The hand-typed table this replaced held
+    B-V for the O and B rows and was 0.2 mag off at K7V and M4V, so a real
+    M4V star (BP-RP ~2.9) got the M5V template.
+    """
+    path = os.path.join(DATA_DIR, "spt_synthetic_colors.csv")
+    spts = np.loadtxt(path, delimiter=",", skiprows=1, usecols=0, dtype=str)
+    colors = np.loadtxt(path, delimiter=",", skiprows=1, usecols=3)
+    return spts, colors
+
+
+def spt_from_bp_rp(bp_rp):
+    """Nearest-neighbor Pickles dwarf type for BP-RP; NaN/masked -> 'G2V'."""
+    spts, colors = _spt_table()
+    bp_rp = _finite(bp_rp)
+    out = np.full(bp_rp.shape, "G2V", dtype=object)
+    ok = np.isfinite(bp_rp)
+    idx = np.abs(bp_rp[ok, None] - colors[None, :]).argmin(axis=1)
+    out[ok] = spts[idx]
+    return out.astype(str)
+
+
 def spt_from_b_v(b_v):
-    """Nearest-neighbor Pickles dwarf type for Johnson B-V; NaN -> 'G2V'.
+    """Nearest-neighbor Pickles dwarf type for Johnson B-V; NaN/masked -> 'G2V'.
 
     The B-V counterpart of spt_from_bp_rp, for catalogs (Hipparcos) that
     give Johnson photometry instead of Gaia's.
     """
     spts, colors, _ = _synthetic_color_table()
-    b_v = np.atleast_1d(
-        np.ma.filled(np.ma.masked_invalid(np.asarray(b_v, dtype=float)), np.nan)
-    )
+    b_v = _finite(b_v)
     out = np.full(b_v.shape, "G2V", dtype=object)
     ok = np.isfinite(b_v)
     if ok.any():
@@ -127,9 +162,7 @@ def g_minus_v_at_b_v(b_v):
     colour-colour sequence off its end is worse than saturating it.
     """
     colors, values = _g_v_vs_b_v()
-    b_v = np.atleast_1d(
-        np.ma.filled(np.ma.masked_invalid(np.asarray(b_v, dtype=float)), np.nan)
-    )
+    b_v = _finite(b_v)
     out = np.full(b_v.shape, g_minus_v("G2V")[0], dtype=float)
     ok = np.isfinite(b_v)
     if ok.any():
@@ -176,37 +209,76 @@ def rate_for_spt(spt, sensorfilter):
     return _RATE_CACHE[key]
 
 
+def log_rate_at_bp_rp(bp_rp, sensorfilter):
+    """log10 of the rate (e-/s) at G = REF_MAG, interpolated in BP-RP.
+
+    Snapping to the nearest template made the rate a step function of
+    colour: M2V -> M4V is -40% in r and +40% in z at fixed G, about +-20%
+    rate error across the M dwarfs from the lookup alone. Interpolating
+    log(rate) between the two bracketing templates removes the steps; the
+    nearest template (`spt_from_bp_rp`) still sets the SED and the PSF
+    colour. Colours outside the table clamp to the end templates. A missing
+    colour gets the G2V rate, matching spt_from_bp_rp's fallback.
+    """
+    bp_rp = _finite(bp_rp)
+    out = np.full(bp_rp.shape, np.log10(rate_for_spt("G2V", sensorfilter)))
+    ok = np.isfinite(bp_rp)
+    if ok.any():
+        spts, colors = _spt_table()
+        order = np.argsort(colors)
+        log_rates = [np.log10(rate_for_spt(spts[i], sensorfilter)) for i in order]
+        out[ok] = np.interp(bp_rp[ok], colors[order], log_rates)
+    return out
+
+
+def bp_rp_from_catalog(catalog):
+    """Per-row BP-RP, NaN wherever either magnitude is masked or non-finite."""
+    return (column_floats(catalog, "phot_bp_mean_mag")
+            - column_floats(catalog, "phot_rp_mean_mag"))
+
+
+def color_fallback(catalog):
+    """True where a row's SED and rate come from the G2V fallback.
+
+    A row has no usable BP-RP and no `spt` override. Written to the CAT
+    extension as `spt_fallback` so the provenance is visible downstream.
+    """
+    fallback = ~np.isfinite(bp_rp_from_catalog(catalog))
+    if "spt" in catalog.colnames:
+        fallback &= np.array([str(s).strip() == "" for s in catalog["spt"]],
+                             dtype=bool)
+    return fallback
+
+
 def rates_for_catalog(catalog, sensorfilter):
     """Per-star (rate_e_s, spt) arrays for a Gaia catalog Table.
 
-    An optional `spt` column overrides the BP-RP lookup row-wise (empty
-    string = no override).
+    Masked or non-finite BP/RP mean "no colour": the G2V template and rate.
+    A masked or non-finite G gives a NaN rate; callers decide whether to drop
+    the row. An optional `spt` column overrides the BP-RP lookup row-wise
+    (empty string = no override) and uses that template's own rate rather
+    than the colour interpolation.
     """
-    g = np.asarray(catalog["phot_g_mean_mag"], dtype=float)
-    bp = np.ma.filled(np.ma.masked_invalid(
-        np.asarray(catalog["phot_bp_mean_mag"], dtype=float)), np.nan)
-    rp = np.ma.filled(np.ma.masked_invalid(
-        np.asarray(catalog["phot_rp_mean_mag"], dtype=float)), np.nan)
-    spts = spt_from_bp_rp(bp - rp)
+    g = column_floats(catalog, "phot_g_mean_mag")
+    bp_rp = bp_rp_from_catalog(catalog)
+    spts = spt_from_bp_rp(bp_rp)
+    log_rate = log_rate_at_bp_rp(bp_rp, sensorfilter)
     if "spt" in catalog.colnames:
         # Optional per-row override (e.g. supergiant templates for injected
-        # Cepheids — the BP-RP table maps to dwarfs only). Empty string
+        # Cepheids -- the BP-RP table maps to dwarfs only). Empty string
         # means "no override". Merge via object dtype: assigning into the
         # fixed-width array from spt_from_bp_rp would silently truncate
         # longer type names.
         override = np.array(
             [str(s).strip() for s in catalog["spt"]], dtype=object
         )
-        merged = spts.astype(object)
         use = override != ""
+        merged = spts.astype(object)
         merged[use] = override[use]
         spts = merged.astype(str)
-    rates = np.array(
-        [
-            rate_for_spt(spt, sensorfilter) * 10.0 ** (-0.4 * (gmag - REF_MAG))
-            for spt, gmag in zip(spts, g)
-        ]
-    )
+        log_rate[use] = [np.log10(rate_for_spt(s, sensorfilter))
+                         for s in override[use]]
+    rates = 10.0 ** (log_rate - 0.4 * (g - REF_MAG))
     return rates, spts
 
 
