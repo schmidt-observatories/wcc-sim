@@ -194,7 +194,8 @@ def add_noise_and_digitize(image_sources_e, sim, exptime, n_reads, rng, add_nois
             0.0, read_noise * np.sqrt(n_reads), size=image_e.shape
         ).astype(np.float32)
     else:
-        image_e = image_clean.copy()
+        # the delivered frame respects the well ceiling with or without noise
+        image_e = expectation.astype(np.float32)
 
     image_adu = np.clip(image_e / gain + bias, 0.0, n_reads * adc_max).astype(
         np.float32

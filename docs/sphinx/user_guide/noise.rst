@@ -25,7 +25,19 @@ Starting from the source-only image in electrons:
    added, and the result is clipped to ``[0, n_reads × adc_max]`` ADU.
 
 With ``add_noise=False``, steps 3–4 are skipped and ``image_e`` equals
-``image_clean`` — useful for photometric closure tests.
+the capped expectation of step 2 (``image_clean`` where nothing saturates)
+— useful for photometric closure tests.
+
+Three products come out of this: the **truth** ``image_clean`` (noiseless
+expectation, e-), the **pre-digitization** realization ``image_e`` (e-, may be
+negative) and the **delivered** frame
+``image_adu`` (what the camera would hand you). Photometry only ever sees the
+delivered frame, converted back to electrons as ``(ADU - bias) * gain``, so
+a ``SimulatedField`` and the FITS file written from it give identical
+measurements. Note that both WCC sensors carry ``bias = 0`` in the ETC, so
+the zero clip removes negative read-noise excursions from the delivered
+frame; a low-background sky therefore measures slightly above its
+expectation, on every path alike.
 
 ``n_reads`` semantics
 ---------------------

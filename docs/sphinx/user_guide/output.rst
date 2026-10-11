@@ -16,7 +16,10 @@ dataclass:
    * - ``image_adu``
      - Digitized image [ADU], float32 — what a real frame looks like.
    * - ``image_e``
-     - The same realization in electrons, before gain/bias/clipping.
+     - The same realization in electrons, before gain/bias/clipping. A
+       diagnostic, not what photometry reads: ``wcc_phot`` loads the
+       delivered product ``(image_adu - bias) * gain`` from an object,
+       exactly as it loads ``(SCI - BIAS) * GAIN`` from a file.
    * - ``image_clean``
      - Noiseless expectation image [e-] (sources + sky + dark).
    * - ``saturation_mask``
@@ -63,8 +66,8 @@ Header cards
 Beyond the WCS keywords, the ``SCI`` header records the full provenance:
 
 ``RA_PNT, DEC_PNT, PA`` (pointing), ``SENSORF, FOCUS, EXPTIME, NREADS,
-JITTER, MAGLIM, SEED, GAIARAD`` (inputs), ``NSRC, PLTSCL, GAIN, RDNOISE,
-DARK, SKYRATE, WELLDEP`` (derived), plus ``WCCSIMV`` / ``WCCETCV`` (software
+JITTER, MAGLIM, SEED, GAIARAD`` (inputs), ``NSRC, PLTSCL, GAIN, BIAS,
+SATLEVEL, RDNOISE, DARK, SKYRATE, WELLDEP`` (derived), plus ``WCCSIMV`` / ``WCCETCV`` (software
 versions) and ``DATE`` (creation time, UTC).
 
 The WCS

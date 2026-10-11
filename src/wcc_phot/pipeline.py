@@ -103,7 +103,7 @@ def run_photometry(
     """
     if method not in ("aperture", "psf"):
         raise ValueError(f"method must be 'aperture' or 'psf', got {method!r}")
-    if isinstance(frames, (str, os.PathLike, fits.HDUList)) or hasattr(frames, "image_e"):
+    if isinstance(frames, (str, os.PathLike, fits.HDUList)) or hasattr(frames, "image_adu"):
         frames = [frames]  # one path / HDUList / SimulatedField, not a sequence
     frames = list(frames)
     if not frames:

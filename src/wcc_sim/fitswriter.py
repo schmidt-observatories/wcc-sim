@@ -31,6 +31,7 @@ _CARDS = {
     "add_noise": ("ADDNOISE", "noise realization applied"),
     "pixel_size_um": ("PIXSZUM", "[micron] detector pixel pitch"),
     "gain": ("GAIN", "[e-/ADU] sensor gain"),
+    "bias": ("BIAS", "[ADU] bias level added before the ADC clip"),
     "gain_mode": ("GAINMODE", "readout gain mode (empty if single-mode)"),
     "saturation_e": ("SATLEVEL", "[e-] per-frame ceiling: min(well, ADC x gain)"),
     "read_noise": ("RDNOISE", "[e-] read noise per frame"),
