@@ -26,23 +26,50 @@ _META_CARDS = {
 
 @dataclass
 class Frame:
-    """One WCC exposure: electron image + catalog + WCS + header metadata."""
+    """One WCC exposure: delivered electron image + catalog + WCS + metadata.
 
-    image_e: np.ndarray  # [e-] SCI * GAIN
+    ``image_e`` is the delivered product, ``(ADU - bias) * gain``, whether the
+    frame came from a SimulatedField's ``image_adu`` or a file's ``SCI``: the
+    ADC ceiling and the zero clip are in it on every path (issue #11).
+    """
+
+    image_e: np.ndarray  # [e-] (ADU - bias) * gain
     satmask: np.ndarray  # bool
     catalog: Table
     wcs: WCS
     meta: dict
 
 
+def _electrons(adu, meta):
+    """Delivered electrons: (ADU - bias) * gain, the one product photometry sees."""
+    return (np.asarray(adu, dtype=float) - meta["bias"]) * float(meta["gain"])
+
+
+def _meta_from_params(params):
+    meta = {key: params[key] for key in _META_CARDS}
+    meta["bias"] = float(params.get("bias", 0.0))
+    return meta
+
+
+def _meta_from_header(header):
+    try:
+        meta = {key: header[card] for key, card in _META_CARDS.items()}
+    except KeyError as err:
+        raise ValueError(
+            f"missing header card {err} — is this a wcc-sim FITS file?"
+        ) from None
+    meta["bias"] = float(header.get("BIAS", 0.0))  # files written before BIAS
+    return meta
+
+
 def load_frame(source):
     """Build a Frame from a FITS path, an open HDUList, or a SimulatedField."""
     if isinstance(source, Frame):
         return source
-    if hasattr(source, "image_e") and hasattr(source, "params"):
-        meta = {key: source.params[key] for key in _META_CARDS}
+    if hasattr(source, "image_adu") and hasattr(source, "params"):
+        meta = _meta_from_params(source.params)
         return Frame(
-            image_e=np.asarray(source.image_e, dtype=float),
+            image_e=_electrons(source.image_adu, meta),
             satmask=np.asarray(source.saturation_mask, dtype=bool),
             catalog=source.catalog.copy(),
             wcs=source.wcs,
@@ -64,29 +91,17 @@ def frame_meta(source):
     """
     if isinstance(source, Frame):
         return source.meta
-    if hasattr(source, "image_e") and hasattr(source, "params"):
-        return {key: source.params[key] for key in _META_CARDS}
+    if hasattr(source, "image_adu") and hasattr(source, "params"):
+        return _meta_from_params(source.params)
     if isinstance(source, (str, os.PathLike)):
-        header = fits.getheader(source, "SCI")
-    else:
-        header = source["SCI"].header
-    try:
-        return {key: header[card] for key, card in _META_CARDS.items()}
-    except KeyError as err:
-        raise ValueError(
-            f"missing header card {err} — is this a wcc-sim FITS file?"
-        ) from None
+        return _meta_from_header(fits.getheader(source, "SCI"))
+    return _meta_from_header(source["SCI"].header)
 
 
 def _frame_from_hdulist(hdul):
     header = hdul["SCI"].header
-    try:
-        meta = {key: header[card] for key, card in _META_CARDS.items()}
-    except KeyError as err:
-        raise ValueError(
-            f"missing header card {err} — is this a wcc-sim FITS file?"
-        ) from None
-    image_e = np.asarray(hdul["SCI"].data, dtype=float) * float(meta["gain"])
+    meta = _meta_from_header(header)
+    image_e = _electrons(hdul["SCI"].data, meta)
     satmask = np.asarray(hdul["SATMASK"].data, dtype=bool)
     catalog = Table(hdul["CAT"].data)
     with warnings.catch_warnings():

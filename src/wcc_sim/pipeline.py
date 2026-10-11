@@ -405,6 +405,7 @@ def simulate_field(
         "pixel_size_um": float(geom.pixel_size_um),
         "plate_scale_mas": float(geom.plate_scale_mas),
         "gain": float(sim.sensor.gain.to(u.electron / u.ct).value),
+        "bias": float(sim.sensor.bias_level.to(u.ct).value),
         "gain_mode": gain_mode,
         "saturation_e": float(saturation_level_e(sim.sensor)),
         "read_noise": float(sim.sensor.read_noise.value),
