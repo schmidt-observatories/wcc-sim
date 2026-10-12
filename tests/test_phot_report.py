@@ -36,19 +36,15 @@ def test_run_photometry_report_hookup(phot_frames, tmp_path):
     assert (tmp_path / "auto.png").stat().st_size > 0
 
 
-def test_make_report_without_gks_style(phot_result, tmp_path, monkeypatch):
-    # simulate an environment where the 'gks' house style is not installed;
-    # _style_context must fall back to defaults rather than raise on __enter__
+def test_report_style_is_packaged(phot_result, tmp_path, monkeypatch):
+    # the style ships with the package, so it must not depend on anything in
+    # the user's stylelib: empty the library and the report still renders
     import matplotlib.style
 
-    monkeypatch.setattr(
-        matplotlib.style,
-        "available",
-        [s for s in matplotlib.style.available if s != "gks"],
-    )
-    with _style_context():  # would raise OSError before the fix
-        pass
-    paths = make_report(phot_result, path=str(tmp_path / "nogks.png"))
+    monkeypatch.setattr(matplotlib.style, "available", [])
+    with _style_context():
+        assert matplotlib.rcParams["xtick.direction"] == "in"
+    paths = make_report(phot_result, path=str(tmp_path / "nostyle.png"))
     assert all((tmp_path / p).stat().st_size > 0 for p in paths)
 
 

@@ -61,6 +61,54 @@ class PhotometryResult:
     def write(self, path, overwrite=True):
         self.to_hdulist().writeto(path, overwrite=overwrite)
 
+    # -- plots: thin wrappers over wcc_phot.report ---------------------------- #
+
+    def plot(self, ax=None):
+        """The relative light curve (same as :meth:`plot_lightcurve`)."""
+        return self.plot_lightcurve(ax=ax)
+
+    def plot_lightcurve(self, ax=None, **errorbar_kw):
+        from .report import plot_lightcurve
+
+        return plot_lightcurve(self, ax=ax, **errorbar_kw)
+
+    def plot_field(self, frame, ax=None):
+        """``frame`` with the apertures drawn (:func:`wcc_phot.report.plot_field`)."""
+        from .report import plot_field
+
+        return plot_field(self, frame, ax=ax)
+
+    def plot_binned_rms(self, ax=None):
+        from .report import plot_binned_rms
+
+        return plot_binned_rms(self, ax=ax)
+
+    def plot_raw_fluxes(self, ax=None):
+        from .report import plot_raw_fluxes
+
+        return plot_raw_fluxes(self, ax=ax)
+
+    def plot_rms_vs_mag(self, ax=None):
+        from .report import plot_rms_vs_mag
+
+        return plot_rms_vs_mag(self, ax=ax)
+
+    def plot_centroids(self, ax=None, coord="x"):
+        from .report import plot_centroids
+
+        return plot_centroids(self, ax=ax, coord=coord)
+
+    def plot_background(self, ax=None):
+        from .report import plot_background
+
+        return plot_background(self, ax=ax)
+
+    def report(self, path="wcc_phot_report.pdf", frame=None):
+        """Write the one-page diagnostic report (:func:`wcc_phot.report.make_report`)."""
+        from .report import make_report
+
+        return make_report(self, frame=frame, path=path)
+
 
 def run_photometry(
     frames,

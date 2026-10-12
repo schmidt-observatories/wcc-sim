@@ -1,0 +1,38 @@
+# plot_default.mplstyle -- the wcc-sim house plotting style.
+#
+# Applied by every wcc_sim / wcc_phot plot helper when it creates its own
+# figure, and available to notebooks through wcc_sim.plotting.use_style().
+# Standalone: no dependency on anything installed in the user's stylelib.
+
+# --- fonts (STIX serif, LaTeX-like) ---
+mathtext.fontset:      stix
+font.family:           STIXGeneral
+axes.formatter.useoffset: False
+
+# --- sizes ---
+axes.labelsize:        13
+axes.titlesize:        13
+legend.fontsize:       10
+figure.dpi:            150
+savefig.dpi:           150
+savefig.bbox:          tight
+
+# --- ticks: inward, with minor ticks shown ---
+xtick.direction:       in
+ytick.direction:       in
+xtick.minor.visible:   True
+ytick.minor.visible:   True
+xtick.top:             True
+ytick.right:           True
+
+# --- subtle grid ---
+axes.grid:             True
+grid.alpha:            0.3
+grid.linewidth:        0.3
+
+# --- lines & legend ---
+lines.linewidth:       2.0
+legend.frameon:        False
+
+# --- qualitative palette (teal, red, amber, blue, green, dark-blue) ---
+axes.prop_cycle: cycler('color', ['00798c', 'd1495b', 'edae49', '30638e', '66a182', '003d5b'])

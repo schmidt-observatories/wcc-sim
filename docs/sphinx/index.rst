@@ -43,6 +43,10 @@ Highlights
   saturation mask, the injected Gaia catalog (with pixel positions, spectral
   types, rates, and saturation flags), and an optional noiseless ``CLEAN``
   image for photometric closure tests.
+- **Plots built in** — ``field.plot()``, ``field.plot_cutout()``,
+  ``field.plot_psf_profile()`` and the ``result.plot_*`` methods of
+  ``wcc_phot`` draw the standard views with one call, each taking ``ax=``
+  (see :doc:`user_guide/plotting`).
 
 Contents
 --------

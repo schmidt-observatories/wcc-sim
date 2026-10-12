@@ -5,6 +5,11 @@ physical terms on a common radial grid and measures the profile that
 actually landed in the image, so the model and the render can be compared
 directly. `make_psf_report(field, path)` draws that as a one-page PDF+PNG.
 
+The report's panels are also public, each taking ``ax=None``:
+`plot_psf_profile`, `plot_cutout` and `plot_satmask` (and, as methods,
+``field.plot_psf_profile()`` etc.), so a notebook can show one of them
+without building the whole page.
+
 The headline number is the Airy-peak-to-scatter-peak contrast, defined
 exactly as ``wcc_etc.scatter_psf.report_diagnostics`` defines it -- the
 analytic Airy peak of a ``(1 - f_scat)`` core over the halo's central
@@ -15,39 +20,20 @@ Rendering uses a plain (pyplot-free) matplotlib Figure, so it works
 headless and never opens a window.
 """
 
-import contextlib
 import os
 
 import numpy as np
 
-#: gks house-style tokens (see the gks-plotting skill).
-_TEAL = "#00798c"
-_RED = "#d1495b"
-_AMBER = "#edae49"
-_DARK = "#003d5b"
-
-
-def _style_context():
-    """The 'gks' house style when installed, matplotlib defaults otherwise."""
-    import matplotlib.style
-
-    if "gks" in matplotlib.style.available:
-        return matplotlib.style.context("gks")
-    return contextlib.nullcontext()
-
-
-def _azimuthal_average(image, xc, yc, edges):
-    """Mean pixel value in each annulus of `edges`, NaN where empty."""
-    ny, nx = image.shape
-    yy, xx = np.mgrid[:ny, :nx]
-    r = np.hypot(yy - yc, xx - xc).ravel()
-    idx = np.digitize(r, edges)
-    n = edges.size + 1
-    count = np.bincount(idx, minlength=n)
-    total = np.bincount(idx, weights=image.ravel().astype(float), minlength=n)
-    with np.errstate(invalid="ignore", divide="ignore"):
-        mean = np.where(count > 0, total / np.maximum(count, 1), np.nan)
-    return mean[1 : edges.size], count[1 : edges.size]
+from .plotting import (
+    AMBER as _AMBER,
+    DARK as _DARK,
+    RED as _RED,
+    TEAL as _TEAL,
+    axes as _axes,
+    azimuthal_average as _azimuthal_average,
+    block_max as _block_max,
+    style_context as _style_context,
+)
 
 
 def _stamp_profile(stamp):
@@ -310,21 +296,6 @@ def _ticks_outward(ax):
 # Panels                                                                       #
 # --------------------------------------------------------------------------- #
 
-def _block_max(a, factor):
-    """Downsample by taking the max of each factor x factor block.
-
-    Max, not mean: a 61-Mpix frame has to be reduced ~8x to display, and
-    averaging would wash the star and the inner halo out of the picture.
-    """
-    if factor <= 1:
-        return a
-    ny, nx = a.shape
-    ny, nx = (ny // factor) * factor, (nx // factor) * factor
-    return a[:ny, :nx].reshape(
-        ny // factor, factor, nx // factor, factor
-    ).max(axis=(1, 3))
-
-
 #: Geometry of the slots hung around the full-frame image, as fractions of
 #: the image axes itself -- percentages, not inches, so the saturation panel
 #: below can be given an identically shaped box and come out at exactly the
@@ -365,8 +336,9 @@ def _side_slots(ax, share=True, anchor=None, top=True):
     return (*slots, right, cax)
 
 
-def _image_panel(fig, ax, image, extent, title, background, cbar=True):
-    """Log-normalized image with a colorbar in electrons."""
+def _image_panel(ax, image, extent, title, background, cbar=True,
+                 unit="e$^-$"):
+    """Log-normalized image with a colorbar in ``unit``."""
     from matplotlib.colors import LogNorm
 
     vmin = max(float(background) * 0.9, 1e-3)
@@ -379,13 +351,13 @@ def _image_panel(fig, ax, image, extent, title, background, cbar=True):
     ax.grid(False)
     _ticks_outward(ax)
     if cbar:
-        cb = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.03)
-        cb.set_label("e$^-$", fontsize=8)
+        cb = ax.figure.colorbar(im, ax=ax, fraction=0.046, pad=0.03)
+        cb.set_label(unit, fontsize=8)
         cb.ax.tick_params(labelsize=7, direction="out")
     return im
 
 
-def _plot_full_frame(fig, ax, field, background):
+def _plot_full_frame(ax, field, background):
     """The whole detector, block-reduced, with cuts through the centre.
 
     The two thin panels are the detector row and column through the array
@@ -402,7 +374,7 @@ def _plot_full_frame(fig, ax, field, background):
     ny, nx = img.shape
     factor = max(1, int(np.ceil(max(ny, nx) / 900.0)))
 
-    im = _image_panel(fig, ax, _block_max(img, factor), [0, nx, 0, ny],
+    im = _image_panel(ax, _block_max(img, factor), [0, nx, 0, ny],
                       "", background, cbar=False)
     iy, ix = ny // 2, nx // 2
     ax.axhline(iy + 0.5, color="0.72", ls="--", lw=0.7)
@@ -437,7 +409,7 @@ def _plot_full_frame(fig, ax, field, background):
     ax_top.tick_params(labelbottom=False)
     ax_right.tick_params(labelleft=False, labelrotation=90)
 
-    cb = fig.colorbar(im, cax=cax)
+    cb = ax.figure.colorbar(im, cax=cax)
     # units as a title, not a rotated label: the label would stick out into
     # the neighbouring panel's y-axis
     cax.set_title("e$^-$", fontsize=7, pad=3.0)
@@ -446,54 +418,95 @@ def _plot_full_frame(fig, ax, field, background):
     cb.ax.yaxis.set_minor_locator(ticker.NullLocator())
 
 
-def _plot_zoom(fig, ax, field, dec, background, half_width=300):
-    """A zoom on the star, at native resolution."""
-    img = field.image_clean
+_IMAGES = {"adu": "image_adu", "e": "image_e", "clean": "image_clean"}
+
+
+def _background(field, which):
+    """Sky + dark level of one of the field's images, for a log stretch."""
+    p = field.params
+    bg_e = (float(p["sky_e_s"]) + float(p["dark_e_s"])) * float(p["exptime"])
+    if which == "adu":
+        return bg_e / float(p["gain"]) + float(p["bias"])
+    return bg_e
+
+
+def select_image(field, which):
+    """One of ``field.image_adu`` / ``image_e`` / ``image_clean`` by short name."""
+    if which not in _IMAGES:
+        raise ValueError(f"which must be one of {sorted(_IMAGES)}, got {which!r}")
+    return getattr(field, _IMAGES[which])
+
+
+def plot_cutout(field, ax=None, star=0, half_width=300, which="clean",
+                cbar=True):
+    """A log-stretched cutout around catalog row ``star``, at native scale.
+
+    ``which`` picks the image (``"clean"``, ``"e"`` or ``"adu"``); the
+    stretch floor is that image's sky + dark level. Returns the axes.
+    """
+    img = select_image(field, which)
     ny, nx = img.shape
-    xc = int(round(float(field.catalog["x"][0])))
-    yc = int(round(float(field.catalog["y"][0])))
+    xc = int(round(float(field.catalog["x"][star])))
+    yc = int(round(float(field.catalog["y"][star])))
     x0, x1 = max(xc - half_width, 0), min(xc + half_width, nx)
     y0, y1 = max(yc - half_width, 0), min(yc + half_width, ny)
-    # No colorbar: the stretch is computed the same way as the full frame's
-    # and the star's peak sets vmax in both, so it would be the same bar.
-    _image_panel(
-        fig, ax, np.asarray(img[y0:y1, x0:x1], dtype=float),
-        [x0 - xc, x1 - xc, y0 - yc, y1 - yc],
-        f"zoom, +/-{half_width} px at native scale", background, cbar=False,
-    )
-    ax.set(xlabel="$\\Delta x$ [px]", ylabel="$\\Delta y$ [px]")
+    with _axes(ax, figsize=(5.5, 5)) as ax:
+        _image_panel(
+            ax, np.asarray(img[y0:y1, x0:x1], dtype=float),
+            [x0 - xc, x1 - xc, y0 - yc, y1 - yc],
+            f"zoom, +/-{half_width} px at native scale",
+            _background(field, which), cbar=cbar,
+            unit="ADU" if which == "adu" else "e$^-$",
+        )
+        ax.set(xlabel="$\\Delta x$ [px]", ylabel="$\\Delta y$ [px]")
+    return ax
 
 
-def _plot_satmask(fig, ax, field, params):
+def plot_satmask(field, ax=None, reserve_slots=False):
     """Where the frame saturated, block-reduced with OR so nothing vanishes.
 
-    Drawn directly under the full frame at the same size: the same block
-    factor and extent, and the same (here invisible) cut and colorbar slots
-    reserved around it, so the two panels are pixel-for-pixel comparable.
+    In the report it is drawn directly under the full frame at the same
+    size: ``reserve_slots=True`` reserves the same (invisible) cut and
+    colorbar slots around it, so the two panels are pixel-for-pixel
+    comparable. Returns the axes.
     """
     mask = np.asarray(field.saturation_mask, dtype=bool)
     ny, nx = mask.shape
     factor = max(1, int(np.ceil(max(ny, nx) / 900.0)))
     shown = _block_max(mask.astype(np.uint8), factor).astype(bool)
-    ax.imshow(shown, origin="lower", cmap="gray_r", vmin=0, vmax=1,
-              extent=[0, nx, 0, ny], interpolation="nearest")
-    for slot in _side_slots(ax, share=False, anchor="N", top=False):
-        slot.set_visible(False)
     n = int(mask.sum())
     r_equiv = np.sqrt(n / np.pi)
-    ax.set(xlabel="x [px]", ylabel="y [px]")
-    ax.set_title(
-        f"saturation mask: {n:,} px "
-        f"({100.0 * n / mask.size:.3f}%), r$_{{equiv}}$ = {r_equiv:,.0f} px",
-        fontsize=9,
-    )
-    ax.grid(False)
-    _ticks_outward(ax)
-    return n, r_equiv
+    with _axes(ax, figsize=(7.5, 7.5 * ny / nx)) as ax:
+        ax.imshow(shown, origin="lower", cmap="gray_r", vmin=0, vmax=1,
+                  extent=[0, nx, 0, ny], interpolation="nearest")
+        if reserve_slots:
+            for slot in _side_slots(ax, share=False, anchor="N", top=False):
+                slot.set_visible(False)
+        ax.set(xlabel="x [px]", ylabel="y [px]")
+        ax.set_title(
+            f"saturation mask: {n:,} px "
+            f"({100.0 * n / mask.size:.3f}%), r$_{{equiv}}$ = {r_equiv:,.0f} px",
+            fontsize=9,
+        )
+        ax.grid(False)
+        _ticks_outward(ax)
+    return ax
 
 
-def _plot_profile(fig, ax, dec, field, params):
-    """Log-log radial profile with the two model terms and the render."""
+def plot_psf_profile(field, ax=None, star=0, dec=None):
+    """Log-log radial profile: Airy core, scatter halo, total, and the render.
+
+    ``dec`` is a :func:`psf_decomposition` result, computed here when not
+    given. Returns the axes.
+    """
+    if dec is None:
+        dec = psf_decomposition(field, star=star)
+    with _axes(ax, figsize=(8, 5.5)) as ax:
+        _draw_profile(ax, dec, field)
+    return ax
+
+
+def _draw_profile(ax, dec, field):
     r = dec["r_px"]
     ok = np.isfinite(dec["measured"]) & (dec["measured"] > 0)
     if ok.any():
@@ -665,12 +678,13 @@ def build_psf_figure(field, zoom_half_width=300):
             height_ratios=[_FRAME_ROW, 1.0], hspace=0.15, wspace=0.124, left=0.04, right=0.985,
             top=0.91, bottom=0.05,
         )
-        _plot_full_frame(fig, fig.add_subplot(grid[0, 0]), field,
-                         background)
-        _plot_zoom(fig, fig.add_subplot(grid[0, 1]), field, dec, background,
-                   half_width=zoom_half_width)
-        _plot_profile(fig, fig.add_subplot(grid[0, 2]), dec, field, params)
-        _plot_satmask(fig, fig.add_subplot(grid[1, 0]), field, params)
+        _plot_full_frame(fig.add_subplot(grid[0, 0]), field, background)
+        # No colorbar on the cutout: the stretch is computed the same way as
+        # the full frame's and the star's peak sets vmax in both.
+        plot_cutout(field, ax=fig.add_subplot(grid[0, 1]),
+                    half_width=zoom_half_width, cbar=False)
+        plot_psf_profile(field, ax=fig.add_subplot(grid[0, 2]), dec=dec)
+        plot_satmask(field, ax=fig.add_subplot(grid[1, 0]), reserve_slots=True)
 
         left_text, right_text = _summary_columns(dec, field, params)
         ax = fig.add_subplot(grid[1, 1:])

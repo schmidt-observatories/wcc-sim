@@ -56,6 +56,8 @@ field = simulate_field(150.1, 2.2, sensorfilter="zwo:r", focus=1,
 field.image_adu       # the detector image (ADU)
 field.catalog         # the Gaia table with pixel positions and count rates
 field.params          # everything the run used (rates, noise, PSF, wing floor)
+field.plot(catalog=True)      # the image with the catalog circled (ax=None -> new figure)
+field.plot_psf_profile()      # Airy core, scatter halo and the rendered radial profile
 ```
 
 The same from the command line:
@@ -71,6 +73,7 @@ from wcc_phot import run_photometry
 result = run_photometry(["f0.fits", "f1.fits", "f2.fits"], target=(150.1, 2.2),
                         method="aperture", n_ref=10)
 result.lightcurve     # per frame: rel_flux_norm, errors, flags
+result.plot()         # the relative light curve; result.plot_field(frame), .report(path)
 ```
 ```sh
 wcc-phot f*.fits --ra 150.1 --dec 2.2 --method psf -o phot.fits --report report.pdf
@@ -98,6 +101,7 @@ so they run offline):
 | `06_cli_and_fits.ipynb` | The `wcc-sim` command line and the layout of the output FITS file. |
 | `07_psf_wings.ipynb` | Diffraction wings beyond the PSF stamp: the wing model, seam smoothness, encircled energy and how far stars extend. |
 | `08_wcc_phot_photometry.ipynb` | `wcc-phot`: simulate a dithered series, pick a target, aperture and PSF photometry, centroid drift, the live viewer. |
+| `09_plotting.ipynb` | Every `.plot_*` method once: images with catalog and saturation overlays, cutouts, the PSF radial profile, stamps, encircled energy, the photometry panels. |
 
 Ready-to-run CLI examples are in `scripts/example_*.sh`. Two end-to-end
 validations live next to them: `scripts/transit_trappist1b.py` injects the

@@ -29,6 +29,18 @@ First public release.
   curve, one-page diagnostic report, live viewer.
 - `wcc-phot` command line.
 
+### Plotting
+- `.plot_*` methods on `SimulatedField` (`plot`, `plot_cutout`,
+  `plot_psf_profile`, `plot_satmask`, `psf_report`) and `PhotometryResult`
+  (`plot`, `plot_lightcurve`, `plot_field`, `plot_binned_rms`,
+  `plot_raw_fluxes`, `plot_rms_vs_mag`, `plot_centroids`, `plot_background`,
+  `report`), each taking `ax=None` and returning the axes. The report panels
+  behind them are public functions in `wcc_sim.psfreport` and
+  `wcc_phot.report`; `wcc_sim.plotting` adds `plot_image`, `plot_stamp`,
+  `plot_radial_profile`, `plot_encircled_energy` for plain arrays and ships
+  the house style as `plot_default.mplstyle` (no user-installed style needed).
+- Tutorial `09_plotting.ipynb`; notebooks 01-08 use the methods.
+
 ### Validation
 - TRAPPIST-1b transit recovery and M101 Cepheid period-luminosity scripts.
 - Monte Carlo cross-check of the wcc-etc signal and noise prediction against

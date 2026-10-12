@@ -40,6 +40,10 @@ run offline.
      - The ``wcc_phot`` differential photometry pipeline: target +
        reference selection, per-frame centroiding, aperture vs PSF
        fluxes, the relative light curve, and the live viewer hook.
+   * - :doc:`notebooks/09_plotting`
+     - Every ``.plot_*`` method once: images with catalog and saturation
+       overlays, cutouts, the PSF radial profile, stamps and encircled
+       energy, and the photometry panels, all with ``ax=``.
 
 .. toctree::
    :maxdepth: 1
@@ -53,3 +57,4 @@ run offline.
    notebooks/06_cli_and_fits
    notebooks/07_psf_wings
    notebooks/08_wcc_phot_photometry
+   notebooks/09_plotting

@@ -7,17 +7,22 @@ per-star RMS vs G against the predicted errors) into a single figure,
 written as both PDF and PNG. `run_photometry(..., report=path)` and the
 CLI `--report` flag call it with the first frame of the series.
 
+Each panel is also a public ``plot_*(result, ax=None)`` function, and a
+method of the same name on :class:`~wcc_phot.pipeline.PhotometryResult`,
+so a notebook can draw one of them on its own axes.
+
 Rendering uses a plain (pyplot-free) matplotlib Figure, so it works
 headless and never opens a window.
 """
 
-import contextlib
 import os
 
 import numpy as np
+from wcc_sim.plotting import REF_COLOR, TARGET_COLOR
+from wcc_sim.plotting import axes as _axes
+from wcc_sim.plotting import style_context as _style_context
 
 from . import flags as flagbits
-from .live import REF_COLOR, TARGET_COLOR
 
 _FLAG_NAMES = {
     flagbits.FLAG_CENTROID: "centroid",
@@ -26,17 +31,6 @@ _FLAG_NAMES = {
     flagbits.FLAG_FIT: "fit",
     flagbits.FLAG_NOFLUX: "noflux",
 }
-
-
-def _style_context():
-    """The 'gks' house style when installed, matplotlib defaults otherwise."""
-    import matplotlib.style
-
-    # style.context() is lazy — an unknown style raises OSError on __enter__,
-    # not here — so check availability up front rather than try/except.
-    if "gks" in matplotlib.style.available:
-        return matplotlib.style.context("gks")
-    return contextlib.nullcontext()
 
 
 def _star_series(measurements, star):
@@ -149,7 +143,21 @@ def _time_axis(lc):
     return t, "time"
 
 
-def _plot_field(ax, frame, result):
+def plot_field(result, frame, ax=None):
+    """The frame around the stars, with apertures at the median centroids.
+
+    ``frame`` is anything :func:`wcc_phot.io.load_frame` accepts. Target
+    aperture and annulus in red, references in teal. Returns the axes.
+    """
+    from .io import load_frame
+
+    frame = load_frame(frame)
+    with _axes(ax, figsize=(8.5, 6)) as ax:
+        _draw_field(ax, frame, result)
+    return ax
+
+
+def _draw_field(ax, frame, result):
     from astropy.visualization import simple_norm
     from matplotlib.patches import Circle
 
@@ -199,18 +207,39 @@ def _plot_field(ax, frame, result):
     ax.set_title("first frame, apertures at median centroids", fontsize=9)
 
 
-def _plot_lightcurve(ax, lc, t, tlabel):
+def plot_lightcurve(result, ax=None, **errorbar_kw):
+    """The normalised relative light curve with its errors. Returns the axes.
+
+    Extra keywords go to ``ax.errorbar`` (``color=``, ``fmt=``, ``label=``),
+    so two results can be overlaid on one axes.
+    """
+    lc = result.lightcurve
+    t, tlabel = _time_axis(lc)
+    with _axes(ax, figsize=(8, 4.5)) as ax:
+        _draw_lightcurve(ax, lc, t, tlabel, **errorbar_kw)
+    return ax
+
+
+def _draw_lightcurve(ax, lc, t, tlabel, **errorbar_kw):
     rel = np.asarray(lc["rel_flux_norm"], dtype=float)
     err = np.asarray(lc["rel_flux_norm_err"], dtype=float)
-    ax.errorbar(t, rel, yerr=err, fmt="o", color=REF_COLOR, ms=3.5,
-                lw=1, capsize=2)
+    kw = dict(fmt="o", color=REF_COLOR, ms=3.5, lw=1, capsize=2)
+    kw.update(errorbar_kw)
+    ax.errorbar(t, rel, yerr=err, **kw)
     ax.axhline(1.0, color="0.4", ls="--", lw=0.8)
     ax.set_xlabel(tlabel)
     ax.set_ylabel("relative flux (norm.)")
     ax.set_title("target / reference ensemble", fontsize=9)
 
 
-def _plot_binned_rms(ax, lc):
+def plot_binned_rms(result, ax=None):
+    """RMS of bin means against bin size, with the white-noise line. Returns the axes."""
+    with _axes(ax, figsize=(6, 4.5)) as ax:
+        _draw_binned_rms(ax, result.lightcurve)
+    return ax
+
+
+def _draw_binned_rms(ax, lc):
     rel = np.asarray(lc["rel_flux_norm"], dtype=float)
     sizes, rms = _binned_rms(rel)
     ax.loglog(sizes, 1e3 * rms, "o-", color=REF_COLOR, ms=3.5, lw=1.2,
@@ -223,7 +252,15 @@ def _plot_binned_rms(ax, lc):
     ax.legend(fontsize=7)
 
 
-def _plot_raw_fluxes(ax, result, t, tlabel):
+def plot_raw_fluxes(result, ax=None):
+    """Target, ensemble and individual reference fluxes over their medians. Returns the axes."""
+    t, tlabel = _time_axis(result.lightcurve)
+    with _axes(ax, figsize=(8, 4.5)) as ax:
+        _draw_raw_fluxes(ax, result, t, tlabel)
+    return ax
+
+
+def _draw_raw_fluxes(ax, result, t, tlabel):
     lc = result.lightcurve
     meas = result.measurements
     for star in np.asarray(result.stars["star"])[1:]:
@@ -239,7 +276,16 @@ def _plot_raw_fluxes(ax, result, t, tlabel):
     ax.legend(fontsize=7)
 
 
-def _plot_rms_vs_mag(ax, result, metrics):
+def plot_rms_vs_mag(result, ax=None, metrics=None):
+    """Per-star measured RMS against G, with the predicted errors. Returns the axes."""
+    if metrics is None:
+        metrics = compute_metrics(result)
+    with _axes(ax, figsize=(6, 4.5)) as ax:
+        _draw_rms_vs_mag(ax, result, metrics)
+    return ax
+
+
+def _draw_rms_vs_mag(ax, result, metrics):
     gmag = np.asarray(result.stars["gmag"], dtype=float)
     rms = 1e3 * metrics["star_rms"]
     err = 1e3 * metrics["star_err"]
@@ -252,7 +298,17 @@ def _plot_rms_vs_mag(ax, result, metrics):
     ax.legend(fontsize=7)
 
 
-def _plot_centroids(ax, result, t, tlabel, coord):
+def plot_centroids(result, ax=None, coord="x"):
+    """Centroid drift of every star about its median, ``coord`` = "x" or "y". Returns the axes."""
+    if coord not in ("x", "y"):
+        raise ValueError(f"coord must be 'x' or 'y', got {coord!r}")
+    t, tlabel = _time_axis(result.lightcurve)
+    with _axes(ax, figsize=(8, 4.5)) as ax:
+        _draw_centroids(ax, result, t, tlabel, coord)
+    return ax
+
+
+def _draw_centroids(ax, result, t, tlabel, coord):
     meas = result.measurements
     for star in np.asarray(result.stars["star"]):
         series = _star_series(meas, star)
@@ -269,7 +325,15 @@ def _plot_centroids(ax, result, t, tlabel, coord):
     ax.legend(fontsize=7)
 
 
-def _plot_background(ax, result, t, tlabel):
+def plot_background(result, ax=None):
+    """Annulus background per star and frame. Returns the axes."""
+    t, tlabel = _time_axis(result.lightcurve)
+    with _axes(ax, figsize=(8, 4.5)) as ax:
+        _draw_background(ax, result, t, tlabel)
+    return ax
+
+
+def _draw_background(ax, result, t, tlabel):
     meas = result.measurements
     for star in np.asarray(result.stars["star"]):
         series = _star_series(meas, star)
@@ -354,19 +418,19 @@ def make_report(result, frame=None, path="wcc_phot_report.pdf"):
 
         ax_field = fig.add_subplot(grid[0, :])
         if frame is not None:
-            _plot_field(ax_field, frame, result)
+            _draw_field(ax_field, frame, result)
         else:
             ax_field.text(0.5, 0.5, "no frame provided", ha="center",
                           va="center", color="0.5")
             ax_field.set_axis_off()
 
-        _plot_lightcurve(fig.add_subplot(grid[1, 0]), lc, t, tlabel)
-        _plot_binned_rms(fig.add_subplot(grid[1, 1]), lc)
-        _plot_raw_fluxes(fig.add_subplot(grid[2, 0]), result, t, tlabel)
-        _plot_rms_vs_mag(fig.add_subplot(grid[2, 1]), result, metrics)
-        _plot_centroids(fig.add_subplot(grid[3, 0]), result, t, tlabel, "x")
-        _plot_centroids(fig.add_subplot(grid[3, 1]), result, t, tlabel, "y")
-        _plot_background(fig.add_subplot(grid[4, 0]), result, t, tlabel)
+        _draw_lightcurve(fig.add_subplot(grid[1, 0]), lc, t, tlabel)
+        _draw_binned_rms(fig.add_subplot(grid[1, 1]), lc)
+        _draw_raw_fluxes(fig.add_subplot(grid[2, 0]), result, t, tlabel)
+        _draw_rms_vs_mag(fig.add_subplot(grid[2, 1]), result, metrics)
+        _draw_centroids(fig.add_subplot(grid[3, 0]), result, t, tlabel, "x")
+        _draw_centroids(fig.add_subplot(grid[3, 1]), result, t, tlabel, "y")
+        _draw_background(fig.add_subplot(grid[4, 0]), result, t, tlabel)
 
         ax_text = fig.add_subplot(grid[4, 1])
         ax_text.set_axis_off()

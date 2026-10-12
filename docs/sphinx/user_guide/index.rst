@@ -15,6 +15,7 @@ which gives the exact signatures and docstrings.
    scatter
    noise
    output
+   plotting
 
 If you prefer to learn by example, the :doc:`../tutorials` cover the same
 material as runnable notebooks.

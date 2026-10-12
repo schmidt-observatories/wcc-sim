@@ -59,6 +59,48 @@ class SimulatedField:
     def write(self, path, write_clean=True):
         self.to_hdulist(write_clean=write_clean).writeto(path, overwrite=True)
 
+    # -- plots: thin wrappers over wcc_sim.plotting / wcc_sim.psfreport ----- #
+
+    def plot(self, ax=None, which="adu", catalog=False, satmask=False, **kw):
+        """The image with an asinh stretch (:func:`wcc_sim.plotting.plot_image`).
+
+        ``which`` is ``"adu"``, ``"e"`` or ``"clean"``; ``catalog=True``
+        circles the in-image stars and ``satmask=True`` outlines the
+        saturated pixels. Returns the axes.
+        """
+        from .plotting import plot_image
+        from .psfreport import select_image
+
+        return plot_image(
+            select_image(self, which), ax=ax,
+            catalog=self.catalog if catalog else None,
+            satmask=self.saturation_mask if satmask else None, **kw,
+        )
+
+    def plot_cutout(self, ax=None, **kw):
+        """Log-stretched cutout around a star (:func:`wcc_sim.psfreport.plot_cutout`)."""
+        from .psfreport import plot_cutout
+
+        return plot_cutout(self, ax=ax, **kw)
+
+    def plot_psf_profile(self, ax=None, **kw):
+        """Radial PSF profile, model terms and render (:func:`wcc_sim.psfreport.plot_psf_profile`)."""
+        from .psfreport import plot_psf_profile
+
+        return plot_psf_profile(self, ax=ax, **kw)
+
+    def plot_satmask(self, ax=None):
+        """The saturation mask (:func:`wcc_sim.psfreport.plot_satmask`)."""
+        from .psfreport import plot_satmask
+
+        return plot_satmask(self, ax=ax)
+
+    def psf_report(self, path="wcc_sim_psf_report.pdf", **kw):
+        """Write the one-page PSF report (:func:`wcc_sim.psfreport.make_psf_report`)."""
+        from .psfreport import make_psf_report
+
+        return make_psf_report(self, path, **kw)
+
 
 def _validate_inputs(
     ra, dec, focus, exptime, n_reads, mag_limit, oversample, shape,

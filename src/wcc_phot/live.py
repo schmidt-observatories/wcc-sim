@@ -11,9 +11,7 @@ so custom displays (GUIs, DS9, web) can hook in the same way.
 import warnings
 
 import numpy as np
-
-TARGET_COLOR = "#d1495b"
-REF_COLOR = "#00798c"
+from wcc_sim.plotting import REF_COLOR, TARGET_COLOR  # noqa: F401
 
 
 class LiveViewer:
