@@ -194,6 +194,31 @@ def test_profile_without_f_focal_falls_back_to_p_full():
     assert halo.frac_total == pytest.approx(P_FULL_FRED, rel=1e-9)
 
 
+def test_profile_without_either_fraction_key_raises():
+    from wcc_sim.scatter import load_scatter_table, scatter_halo
+
+    table = load_scatter_table()
+    del table.meta["F_FOCAL"]
+    halo = scatter_halo(MM_PER_PIX_IMX, table=table)   # absent key: P_FULL
+    assert halo.meta["SCATNORM"] == "P_FULL"
+    del table.meta["P_FULL"]
+    with pytest.raises(ValueError, match="neither F_FOCAL nor P_FULL"):
+        scatter_halo(MM_PER_PIX_IMX, table=table)
+    # an explicit fraction still works without either key
+    assert scatter_halo(MM_PER_PIX_IMX, frac_total=5e-3, table=table).meta["SCATNORM"] == "USER"
+
+
+def test_scaled_halo_records_a_user_fraction():
+    from wcc_sim.scatter import scatter_halo
+
+    halo = scatter_halo(MM_PER_PIX_IMX)
+    assert halo.meta["SCATNORM"] == "F_FOCAL"
+    rescaled = halo.scaled(0.5 * halo.frac_total)
+    assert rescaled.meta["SCATNORM"] == "USER"
+    assert rescaled.frac_total == pytest.approx(0.5 * halo.frac_total)
+    assert halo.meta["SCATNORM"] == "F_FOCAL"   # the original is untouched
+
+
 def test_profile_integral_matches_the_exact_2d_map_integral(table):
     """The real validation: azimuthal average, units and integration at once.
 

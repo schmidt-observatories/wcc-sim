@@ -206,13 +206,19 @@ class ScatterHalo:
     # -- rescaling ----------------------------------------------------------- #
 
     def scaled(self, frac_total):
-        """Same halo shape, renormalized to a different scattered fraction."""
+        """Same halo shape, renormalized to a different scattered fraction.
+
+        The result's ``meta["SCATNORM"]`` is ``"USER"``: the fraction no
+        longer matches the F_FOCAL / P_FULL value the table quoted.
+        """
         factor = float(frac_total) / self.frac_total
+        meta = dict(self.meta)
+        meta["SCATNORM"] = "USER"
         return ScatterHalo(
             r_px=self.r_px,
             frac_per_px=self.frac_per_px * factor,
             frac_total=float(frac_total),
-            meta=dict(self.meta),
+            meta=meta,
         )
 
 
@@ -378,8 +384,19 @@ def scatter_halo(mm_per_pixel, frac_total=None, table=None):
     if mm_per_pixel <= 0.0:
         raise ValueError(f"mm_per_pixel must be > 0, got {mm_per_pixel!r}")
     if frac_total is None:
-        norm = "F_FOCAL" if table.meta.get("F_FOCAL") else "P_FULL"
-        frac = float(table.meta[norm])
+        # F_FOCAL first, P_FULL when the map carried no "fraction of total"
+        # line; a key that is absent or None is missing, a value is a value.
+        for norm in ("F_FOCAL", "P_FULL"):
+            value = table.meta.get(norm)
+            if value is not None:
+                break
+        else:
+            raise ValueError(
+                "the scatter profile table carries neither F_FOCAL nor P_FULL "
+                "in its meta, so the scattered fraction is unknown; pass "
+                "frac_total= explicitly"
+            )
+        frac = float(value)
     else:
         norm, frac = "USER", float(frac_total)
     meta = dict(table.meta)

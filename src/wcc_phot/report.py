@@ -143,7 +143,7 @@ def _time_axis(lc):
     return t, "time"
 
 
-def plot_field(result, frame, ax=None):
+def plot_field(result, frame, ax=None, title="apertures at median centroids"):
     """The frame around the stars, with apertures at the median centroids.
 
     ``frame`` is anything :func:`wcc_phot.io.load_frame` accepts. Target
@@ -153,11 +153,11 @@ def plot_field(result, frame, ax=None):
 
     frame = load_frame(frame)
     with _axes(ax, figsize=(8.5, 6)) as ax:
-        _draw_field(ax, frame, result)
+        _draw_field(ax, frame, result, title=title)
     return ax
 
 
-def _draw_field(ax, frame, result):
+def _draw_field(ax, frame, result, title):
     from astropy.visualization import simple_norm
     from matplotlib.patches import Circle
 
@@ -204,7 +204,7 @@ def _draw_field(ax, frame, result):
         )
     ax.set_xlabel("x [px]")
     ax.set_ylabel("y [px]")
-    ax.set_title("first frame, apertures at median centroids", fontsize=9)
+    ax.set_title(title, fontsize=9)
 
 
 def plot_lightcurve(result, ax=None, **errorbar_kw):
@@ -418,7 +418,8 @@ def make_report(result, frame=None, path="wcc_phot_report.pdf"):
 
         ax_field = fig.add_subplot(grid[0, :])
         if frame is not None:
-            _draw_field(ax_field, frame, result)
+            _draw_field(ax_field, frame, result,
+                        title="first frame, apertures at median centroids")
         else:
             ax_field.text(0.5, 0.5, "no frame provided", ha="center",
                           va="center", color="0.5")

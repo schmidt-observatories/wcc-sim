@@ -143,3 +143,40 @@ def test_style_context_keeps_interactive_state():
         assert matplotlib.rcParams["interactive"] == (not was)
     finally:
         matplotlib.rcParams["interactive"] = was
+
+
+def test_style_context_does_not_resolve_the_backend():
+    # The report writers draw on a pyplot-free Figure. Reading
+    # rcParams["backend"] while it is still the auto-backend sentinel imports
+    # pyplot and selects a backend, so the context must never read it: the
+    # sentinel has to survive a round trip through the context untouched.
+    import matplotlib
+    from matplotlib import rcsetup
+
+    raw = dict.__getitem__(matplotlib.rcParams, "backend")
+    try:
+        dict.__setitem__(matplotlib.rcParams, "backend", rcsetup._auto_backend_sentinel)
+        with plotting.style_context():
+            assert matplotlib.rcParams["xtick.direction"] == "in"
+        assert dict.__getitem__(matplotlib.rcParams, "backend") is rcsetup._auto_backend_sentinel
+    finally:
+        dict.__setitem__(matplotlib.rcParams, "backend", raw)
+
+
+def test_plot_image_extent_matches_the_reduced_pixels():
+    # 13 x 10 at max_px=4 -> factor 4 -> 3 x 2 blocks covering 12 x 8 native
+    # pixels; the extent must be those pixels, not the original 13 x 10, or
+    # the display is stretched and native-coordinate overlays drift.
+    img = np.arange(130, dtype=float).reshape(13, 10)
+    ax = plotting.plot_image(img, max_px=4)
+    assert ax.images[0].get_array().shape == (3, 2)
+    assert ax.images[0].get_extent() == pytest.approx((-0.5, 7.5, -0.5, 11.5))
+    # no reduction: the full native extent
+    ax = plotting.plot_image(img, max_px=20)
+    assert ax.images[0].get_extent() == pytest.approx((-0.5, 9.5, -0.5, 12.5))
+
+
+def test_plot_field_title_is_a_parameter(phot_result, phot_frames):
+    assert phot_result.plot_field(phot_frames[1]).get_title() == "apertures at median centroids"
+    ax = phot_result.plot_field(phot_frames[1], title="frame 1")
+    assert ax.get_title() == "frame 1"

@@ -39,27 +39,29 @@ REF_COLOR = TEAL
 CATALOG_COLOR = AMBER
 
 
-#: rcParams a style context must not roll back. In a fresh Jupyter kernel the
-#: inline backend is activated lazily by the first figure, and that switches
-#: ``interactive`` on; a plain ``matplotlib.style.context`` entered before then
-#: restores it to False on exit, and the kernel stops flushing figures to the
-#: cell output from that point on.
-_KEEP_RC = ("backend", "interactive")
-
-
 @contextlib.contextmanager
 def style_context():
-    """Context manager applying the packaged style to what is drawn inside."""
+    """Context manager applying the packaged style to what is drawn inside.
+
+    Two rcParams are deliberately not rolled back on exit. ``interactive``:
+    in a fresh Jupyter kernel the inline backend is activated lazily by the
+    first figure and switches it on, so a context entered before then would
+    restore ``False`` and the kernel would stop flushing figures to the cell
+    output. ``backend``: reading it resolves matplotlib's auto-backend
+    sentinel, which imports pyplot and selects a backend, and the report
+    writers must stay pyplot-free (``matplotlib.rc_context`` skips it for the
+    same reason).
+    """
     import matplotlib
     import matplotlib.style
 
-    orig = matplotlib.rcParams.copy()
+    orig = dict(matplotlib.rcParams.copy())  # .copy() does not resolve 'backend'
+    del orig["backend"]
     try:
         matplotlib.style.use(STYLE_PATH)
         yield
     finally:
-        for key in _KEEP_RC:
-            orig[key] = matplotlib.rcParams[key]
+        orig["interactive"] = matplotlib.rcParams["interactive"]
         dict.update(matplotlib.rcParams, orig)  # as matplotlib.rc_context does
 
 
@@ -180,7 +182,9 @@ def plot_image(image, ax=None, catalog=None, satmask=None, stretch="asinh",
     the image's shape, drawn as a contour. ``norm`` replaces the
     ``stretch``/``percent`` default for a hand-set stretch. Frames larger
     than ``max_px`` on a side are block-max reduced for display, with the
-    axes kept in native pixels. Returns the axes.
+    axes kept in native pixels (the reduction drops up to ``factor - 1``
+    edge rows and columns, so the extent is that of the pixels shown).
+    Returns the axes.
     """
     from astropy.visualization import simple_norm
 
@@ -188,7 +192,8 @@ def plot_image(image, ax=None, catalog=None, satmask=None, stretch="asinh",
     ny, nx = image.shape
     factor = max(1, int(np.ceil(max(ny, nx) / float(max_px))))
     shown = block_max(image, factor)
-    extent = (-0.5, nx - 0.5, -0.5, ny - 0.5)
+    ny_shown, nx_shown = (n * factor for n in shown.shape)
+    extent = (-0.5, nx_shown - 0.5, -0.5, ny_shown - 0.5)
     with axes(ax, figsize=(7.5, 7.5 * ny / nx)) as ax:
         if norm is None:
             norm = simple_norm(shown, stretch, percent=percent)

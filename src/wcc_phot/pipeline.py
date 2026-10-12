@@ -72,11 +72,11 @@ class PhotometryResult:
 
         return plot_lightcurve(self, ax=ax, **errorbar_kw)
 
-    def plot_field(self, frame, ax=None):
+    def plot_field(self, frame, ax=None, **kw):
         """``frame`` with the apertures drawn (:func:`wcc_phot.report.plot_field`)."""
         from .report import plot_field
 
-        return plot_field(self, frame, ax=ax)
+        return plot_field(self, frame, ax=ax, **kw)
 
     def plot_binned_rms(self, ax=None):
         from .report import plot_binned_rms
