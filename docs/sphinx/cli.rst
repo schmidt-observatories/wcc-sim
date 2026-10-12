@@ -247,7 +247,7 @@ RMS against the median predicted error) and writes a FITS file with
 
 Mixed sensorfilters or focus levels in one series are rejected up front.
 Frames are streamed one at a time, so a long series does not need to fit in
-memory. The tutorial :doc:`notebooks/08_wcc_phot_photometry` walks through
+memory. The tutorial :doc:`notebooks/09_wcc_phot_photometry` walks through
 the same pipeline from Python.
 
 Example scripts

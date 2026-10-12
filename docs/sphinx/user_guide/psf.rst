@@ -147,5 +147,5 @@ star split into its Airy core, scattered-light halo and total against what
 landed in the noiseless image; ``field.psf_report(path)`` (CLI
 ``--report``) writes the one-page report built around it; and
 :func:`wcc_sim.psfreport.psf_decomposition` returns the numbers. See
-:doc:`plotting` and the tutorials :doc:`../notebooks/02_psf_focus_modes` and
-:doc:`../notebooks/07_psf_wings`.
+:doc:`plotting` and the tutorials :doc:`../notebooks/03_psf_focus_modes` and
+:doc:`../notebooks/08_psf_wings`.

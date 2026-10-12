@@ -108,4 +108,4 @@ rcParams. To apply the style to a whole session:
 The report writers (``make_psf_report``, ``make_report``) draw on a
 pyplot-free figure under the same style, so they run headless.
 
-The tutorial :doc:`../notebooks/09_plotting` shows every method once.
+The tutorial :doc:`../notebooks/10_plotting` shows every method once.

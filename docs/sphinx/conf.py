@@ -130,6 +130,10 @@ def _sync_notebooks(app):
     dst.mkdir(exist_ok=True)
     if not src.is_dir():
         return
+    names = {nb.name for nb in src.glob("*.ipynb")}
+    for stale in dst.glob("*.ipynb"):   # a renamed tutorial must not linger here
+        if stale.name not in names:
+            stale.unlink()
     for nb in sorted(src.glob("*.ipynb")):
         shutil.copy2(nb, dst / nb.name)
 

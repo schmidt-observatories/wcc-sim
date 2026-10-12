@@ -93,15 +93,16 @@ so they run offline):
 
 | Notebook | What it covers |
 |---|---|
-| `01_wcc_sim_example.ipynb` | Getting started: simulate a field, inspect the catalog, image and parameters, and verify count rates against wcc-etc. |
-| `02_psf_focus_modes.ipynb` | In-focus Airy vs +1/+2-wave defocus PSFs and what they do to peak pixel and saturation. |
-| `03_detectors_and_filters.ipynb` | The two detectors, the filter sets, and Gaia-to-count-rate conversion per spectral type. |
-| `04_noise_and_saturation.ipynb` | Photon, sky, dark and read noise; full well and ADC clipping; the SATMASK extension. |
-| `05_astrometry_and_catalogs.ipynb` | The TAN WCS and its round trip, where stars land, position angle, edges and user-supplied catalogs. |
-| `06_cli_and_fits.ipynb` | The `wcc-sim` command line and the layout of the output FITS file. |
-| `07_psf_wings.ipynb` | Diffraction wings beyond the PSF stamp: the wing model, seam smoothness, encircled energy and how far stars extend. |
-| `08_wcc_phot_photometry.ipynb` | `wcc-phot`: simulate a dithered series, pick a target, aperture and PSF photometry, centroid drift, the live viewer. |
-| `09_plotting.ipynb` | Every `.plot_*` method once: images with catalog and saturation overlays, cutouts, the PSF radial profile, stamps, encircled energy, the photometry panels. |
+| `01_getting_started.ipynb` | Simulate a full frame, overlay the Gaia catalog, compare the three PSF modes on one star, and write the FITS file. |
+| `02_verification.ipynb` | The checks: PSF peak ordering, astrometric residuals, photometric closure on the ETC rates, noise statistics, saturation flags, and the FITS round trip. |
+| `03_psf_focus_modes.ipynb` | In-focus Airy vs +1/+2-wave defocus PSFs and what they do to peak pixel and saturation. |
+| `04_detectors_and_filters.ipynb` | The two detectors, the filter sets, and Gaia-to-count-rate conversion per spectral type. |
+| `05_noise_and_saturation.ipynb` | Photon, sky, dark and read noise; full well and ADC clipping; the SATMASK extension. |
+| `06_astrometry_and_catalogs.ipynb` | The TAN WCS and its round trip, where stars land, position angle, edges and user-supplied catalogs. |
+| `07_cli_and_fits.ipynb` | The `wcc-sim` command line and the layout of the output FITS file. |
+| `08_psf_wings.ipynb` | Diffraction wings beyond the PSF stamp: the wing model, seam smoothness, encircled energy and how far stars extend. |
+| `09_wcc_phot_photometry.ipynb` | `wcc-phot`: simulate a dithered series, pick a target, aperture and PSF photometry, centroid drift, the live viewer. |
+| `10_plotting.ipynb` | Every `.plot_*` method once: images with catalog and saturation overlays, cutouts, the PSF radial profile, stamps, encircled energy, the photometry panels. |
 
 Ready-to-run CLI examples are in `scripts/example_*.sh`. Two end-to-end
 validations live next to them: `scripts/transit_trappist1b.py` injects the

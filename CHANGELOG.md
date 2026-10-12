@@ -39,7 +39,7 @@ First public release.
   `wcc_phot.report`; `wcc_sim.plotting` adds `plot_image`, `plot_stamp`,
   `plot_radial_profile`, `plot_encircled_energy` for plain arrays and ships
   the house style as `plot_default.mplstyle` (no user-installed style needed).
-- Tutorial `09_plotting.ipynb`; notebooks 01-08 use the methods.
+- Tutorial `10_plotting.ipynb`; the other notebooks use the methods.
 
 ### Validation
 - TRAPPIST-1b transit recovery and M101 Cepheid period-luminosity scripts.
@@ -61,4 +61,6 @@ First public release.
   page; the index opens in plain words; the concepts diagram names each stage
   in words with the module beside it; the quickstart uses `field.plot()`; the
   installation page lists the extras and no longer claims a wcc-etc 0.6.0
-  floor; the tutorials no longer name a personal conda kernel.
+  floor; the tutorials no longer name a personal conda kernel. Tutorial 01 is
+  split into a short `01_getting_started` and a `02_verification` that holds
+  the assertions; the other tutorials are renumbered 03 to 10.
