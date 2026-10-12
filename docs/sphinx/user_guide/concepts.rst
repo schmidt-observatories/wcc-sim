@@ -2,49 +2,57 @@ Concepts: the pipeline
 ======================
 
 ``wcc-sim`` has a single public entry point, :func:`~wcc_sim.simulate_field`,
-that runs a fixed pipeline. Each stage lives in its own module and can also be
-used stand-alone (all are documented in the :doc:`../api/index`).
+that runs a fixed pipeline. In words: find the stars in the field, convert
+each one's brightness to electrons per second, draw it with the PSF, place it
+on the detector, add the noise, and write the result. Each stage lives in its
+own module and can also be used stand-alone (all are documented in the
+:doc:`../api/index`); the module names are on the right.
 
 .. code-block:: text
 
    (RA, Dec, sensorfilter, focus, exptime, ...)
         │
         ▼
-   1. catalog.query_gaia        Gaia DR3 cone search, sized to the detector
-        │                       footprint (+10" margin), with an on-disk cache;
-        │                       or your own table via catalog=
+   1. Find the stars             Gaia DR3 cone search sized to the detector
+        │                        footprint (+10" margin), cached on disk; or
+        │                        your own table via catalog=
+        │                                               [catalog.query_gaia]
         ▼
-   2. starflux.rates_for_catalog
-        │                       BP-RP → Pickles dwarf template, count rate
-        │                       interpolated in colour between the bracketing
-        │                       templates through the wcc_etc instrument model,
-        │                       scaled by G mag
+   2. Brightness to electrons    BP-RP picks a Pickles dwarf template; its
+        │                        count rate through the wcc_etc instrument
+        │                        model is interpolated in colour between the
+        │                        bracketing templates and scaled by G mag
+        │                                        [starflux.rates_for_catalog]
         ▼
-   3. psf.render_oversampled_psf
-        │                       in-focus Airy at each template's effective
-        │                       wavelength (or spectrum-weighted when
-        │                       chromatic=True), or the Zemax defocus PSF, on an
-        │                       11x-oversampled grid, jitter-blurred
+   3. Draw the PSF               in-focus Airy at each template's effective
+        │                        wavelength (or spectrum-weighted when
+        │                        chromatic=True), or the Zemax defocus PSF, on
+        │                        an 11x-oversampled grid, blurred by jitter
+        │                                        [psf.render_oversampled_psf]
         │
-        ├─ wings.fit_wing_model power-law diffraction wing fitted to the stamp's
-        │                       outer annulus, drawn beyond the stamp down to
-        │                       wing_floor_sigma of the background noise
+        ├─ diffraction wings     a power law fitted to the stamp's outer
+        │                        annulus, drawn beyond the stamp down to
+        │                        wing_floor_sigma of the background noise
+        │                                              [wings.fit_wing_model]
         │
-        ├─ scatter.halo_for_sensorfilter
-        │                       the measured scattered-light halo, an additive
-        │                       term reaching past the chip diagonal
+        ├─ scattered light       the measured halo, an additive term reaching
+        │                        past the chip diagonal
+        │                                      [scatter.halo_for_sensorfilter]
         ▼
-   4. render.render_scene       every star sub-pixel placed and binned onto
-        │                       the detector grid [e-]; extended.render_extended
-        │                       adds Sersic components by FFT convolution
+   4. Place every star           sub-pixel placement, binned onto the detector
+        │                        grid [e-]; Sersic galaxies added by FFT
+        │                        convolution
+        │                          [render.render_scene, extended.render_extended]
         ▼
-   5. render.add_noise_and_digitize
-        │                       + sky & dark, per-frame full-well/ADC ceiling,
-        │                       Poisson + read noise, gain + bias → ADU
+   5. Add noise, digitize        sky and dark, the per-frame full-well/ADC
+        │                        ceiling, Poisson and read noise, gain and
+        │                        bias to ADU
+        │                                    [render.add_noise_and_digitize]
         ▼
-   6. SimulatedField            image_adu / image_e / image_clean / satmask /
-                                wcs / catalog / params → FITS via fitswriter;
-                                optional PSF report via psfreport
+   6. The result                 SimulatedField: image_adu / image_e /
+                                 image_clean / satmask / wcs / catalog /
+                                 params; FITS via fitswriter, optional PSF
+                                 report via psfreport
 
 Design principles
 -----------------
@@ -60,7 +68,7 @@ image therefore agrees with the ETC prediction by construction.
 thousands of stars, but only ~45 Pickles dwarf types. The rate for each
 (type, sensorfilter) pair is computed once at a reference magnitude
 (G = 15) and scaled analytically per star with
-:math:`10^{-0.4\,(G - 15)}` — this is what makes the full array fast.
+:math:`10^{-0.4\,(G - 15)}`, which is what makes the full array fast.
 
 **Everything is reproducible.** Pass ``seed=`` to pin the noise realization;
 the Gaia query is cached on disk if you pass ``cache_dir=``; every input
@@ -70,7 +78,7 @@ stored in ``field.params`` and written to the FITS header.
 The two detectors
 -----------------
 
-Sensors are addressed by ``wcc_etc`` *sensorfilter* strings, ``"kind:band"``:
+Sensors are addressed by ``wcc_etc`` :term:`sensorfilter` strings, ``"kind:band"``:
 
 .. list-table::
    :header-rows: 1
@@ -131,7 +139,7 @@ details and the CLI flag names are on the :doc:`../cli` page.
    * - ``cache_dir``
      - Directory for the on-disk Gaia cache; repeat runs are offline.
    * - ``shape``
-     - ``(ny, nx)`` subarray override — use for quick looks and tests.
+     - ``(ny, nx)`` subarray override, for quick looks and tests.
    * - ``stamp_npix, oversample``
      - PSF stamp size [detector px, odd] and sub-pixel oversampling
        (odd; default 11). See :doc:`psf`.

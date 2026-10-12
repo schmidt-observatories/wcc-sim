@@ -54,3 +54,11 @@ First public release.
   defocus PSF centring (#18, with wcc-etc), one delivered-frame contract
   `(ADU - bias) * gain` for objects and files (#11), recorded seed for
   unseeded runs and a stale-Gaia-cache warning (#24).
+
+### Documentation
+- Docs site carries the Schmidt Observatory System logo and the stock Read the
+  Docs theme (the Schmidt Sciences stylesheet was never loaded). New glossary
+  page; the index opens in plain words; the concepts diagram names each stage
+  in words with the module beside it; the quickstart uses `field.plot()`; the
+  installation page lists the extras and no longer claims a wcc-etc 0.6.0
+  floor; the tutorials no longer name a personal conda kernel.

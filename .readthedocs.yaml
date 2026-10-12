@@ -27,3 +27,6 @@ python:
       path: .
       extra_requirements:
         - docs
+
+formats:
+  - htmlzip

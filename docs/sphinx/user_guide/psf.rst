@@ -26,7 +26,7 @@ selected with ``focus=``:
      - Zemax Huygens PSF data bundled with ``wcc_etc``
 
 If ``focus=None`` (the default), the focus level implied by the sensorfilter
-key is used — e.g. ``zwo:r+1`` defaults to 1 wave, ``zwo:r`` to in-focus.
+key is used: ``zwo:r+1`` defaults to 1 wave, ``zwo:r`` to in-focus.
 
 The defocused PSFs are *annular*: the core is centrally depressed and most of
 the energy lands in a ring (radius ~29 px for 2 waves on the IMX455). This

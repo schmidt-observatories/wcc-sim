@@ -55,14 +55,14 @@ The first run performs a Gaia DR3 cone search sized to the detector footprint
    field.catalog          # Gaia table + x, y, spt, rate_e_s, in_image, saturated
    field.params           # every input + derived quantity (gain, sky rate, ...)
 
+Every :class:`~wcc_sim.SimulatedField` draws itself:
+
 .. code-block:: python
 
-   import matplotlib.pyplot as plt
-   from astropy.visualization import simple_norm
+   field.plot(catalog=True)   # asinh-stretched image, every Gaia position circled
 
-   plt.imshow(field.image_adu, origin="lower",
-              norm=simple_norm(field.image_adu, "asinh", percent=99.5),
-              cmap="gray")
+:doc:`user_guide/plotting` lists the other views (cutouts, the PSF radial
+profile, the saturation mask); each takes ``ax=`` to draw into your own figure.
 
 3. Or use the command line
 --------------------------
@@ -93,8 +93,9 @@ See :doc:`cli` for every option and a cookbook of common invocations.
 Where to go next
 ----------------
 
-- :doc:`user_guide/index` — how each pipeline stage works and which knobs it
+- :doc:`user_guide/index`: how each pipeline stage works and which knobs it
   exposes (PSF stamps, jitter, noise model, saturation, FITS layout).
-- :doc:`tutorials` — runnable notebooks, from a first quick look to
+- :doc:`tutorials`: runnable notebooks, from a first quick look to
   photometric closure and astrometric verification.
-- :doc:`api/index` — the full API reference.
+- :doc:`api/index`: the full API reference.
+- :doc:`glossary`: the terms used throughout these pages.

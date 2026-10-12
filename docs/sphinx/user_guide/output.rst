@@ -14,7 +14,7 @@ dataclass:
    * - Attribute
      - Contents
    * - ``image_adu``
-     - Digitized image [ADU], float32 — what a real frame looks like.
+     - Digitized image [ADU], float32, what a real frame looks like.
    * - ``image_e``
      - The same realization in electrons, before gain/bias/clipping. A
        diagnostic, not what photometry reads: ``wcc_phot`` loads the
@@ -124,7 +124,7 @@ The WCS
 - ``pa`` rotates the field on the detector.
 
 Round-trip accuracy of catalog positions through the WCS is at the
-floating-point level — the tutorials include an astrometric closure check.
+floating-point level. The tutorials include an astrometric closure check.
 
 Reading it back
 ---------------

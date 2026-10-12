@@ -74,7 +74,7 @@ Bringing your own catalog
 
 Any astropy Table with the six photometric Gaia columns (the astrometry
 columns are optional) can be passed straight to
-:func:`~wcc_sim.simulate_field` via ``catalog=`` — the Gaia query is skipped
+:func:`~wcc_sim.simulate_field` via ``catalog=``, and the Gaia query is skipped
 entirely. This is how the test suite runs without network, and it is the
 easiest way to inject synthetic grids of stars:
 

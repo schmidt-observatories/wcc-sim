@@ -5,10 +5,11 @@ Requirements
 ------------
 
 - **Python 3.11 or newer.**
-- ``wcc_etc`` **0.6.0 or newer** — the WCC exposure time calculator. It is
-  *not* on PyPI; install it from source first (see below).
+- ``wcc_etc``, the WCC exposure time calculator, installed from its GitHub
+  ``main`` branch. It is not on PyPI yet, so install it first (see below).
 - The scientific stack pulled in automatically as dependencies: ``numpy``,
-  ``scipy``, ``astropy``, ``astroquery``, and ``synphot``.
+  ``scipy``, ``astropy``, ``astroquery``, ``synphot``, ``photutils``,
+  ``dust_extinction`` and ``matplotlib``.
 
 Install from source
 -------------------
@@ -27,6 +28,13 @@ first, then ``wcc-sim`` itself, both in *editable* mode so local changes to
    git clone https://github.com/schmidt-observatories/wcc-sim.git
    cd wcc-sim
    pip install -e .
+
+Optional extras add the test tools and the documentation toolchain:
+
+.. code-block:: bash
+
+   pip install -e ".[test]"   # pytest, ruff
+   pip install -e ".[docs]"   # Sphinx, nbsphinx, the theme
 
 Using a conda environment
 -------------------------
@@ -64,14 +72,14 @@ The quickest check runs a tiny noiseless simulation with a hand-made catalog
 
 If that prints a large positive number, you are ready to go. Continue with
 :doc:`quickstart`. (The first *real* simulation also needs network access for
-the Gaia DR3 cone search — see :doc:`user_guide/catalog` for the on-disk
+the Gaia DR3 cone search. :doc:`user_guide/catalog` describes the on-disk
 cache.)
 
 Running the test suite
 ----------------------
 
-The package ships with a ``pytest`` suite (no network required — Gaia queries
-are mocked):
+The package ships with a ``pytest`` suite (no network required, the Gaia
+queries are mocked):
 
 .. code-block:: bash
 
@@ -90,8 +98,7 @@ pages are rendered from the Jupyter notebooks via `nbsphinx
 .. code-block:: bash
 
    # from the repository root
-   pip install -e .                              # so autodoc can import the package
-   pip install -r docs/sphinx/requirements.txt   # Sphinx + theme + nbsphinx
+   pip install -e ".[docs]"                      # the package + Sphinx + theme + nbsphinx
    # plus a pandoc binary, e.g.  conda install pandoc   or   brew install pandoc
 
    cd docs/sphinx

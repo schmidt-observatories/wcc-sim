@@ -29,13 +29,13 @@ Options
      - Default
      - Meaning
    * - ``--ra`` *(required)*
-     - —
+     - none
      - Pointing RA [deg, ICRS].
    * - ``--dec`` *(required)*
-     - —
+     - none
      - Pointing Dec [deg, ICRS].
    * - ``-o, --output`` *(required)*
-     - —
+     - none
      - Output FITS path.
    * - ``--sensorfilter``
      - ``zwo:r``
@@ -70,7 +70,7 @@ Options
      - RNG seed for a reproducible noise realization.
    * - ``--shape NY NX``
      - full array
-     - Subarray shape — quick looks and tests.
+     - Subarray shape, for quick looks and tests.
    * - ``--stamp-npix``
      - per focus
      - PSF stamp size [detector px, odd]; see :doc:`user_guide/psf`.
@@ -111,14 +111,14 @@ Options
 Cookbook
 --------
 
-Quick look — 1024×1024 subarray, cached Gaia query:
+Quick look: 1024×1024 subarray, cached Gaia query:
 
 .. code-block:: bash
 
    wcc-sim --ra 291.0 --dec 44.5 --shape 1024 1024 \
            --cache-dir gaia_cache --seed 42 -o quicklook.fits
 
-Focus sweep — the same field at all three focus levels:
+Focus sweep: the same field at all three focus levels:
 
 .. code-block:: bash
 
@@ -141,7 +141,7 @@ Noiseless truth image for photometric closure (no noise, keep CLEAN):
    wcc-sim --ra 291.0 --dec 44.5 --no-noise --shape 2048 2048 \
            --cache-dir gaia_cache -o truth.fits
 
-Bright-star handling — split 900 s into 10 reads so per-frame exposure
+Bright-star handling: split 900 s into 10 reads so per-frame exposure
 stays short, and extend the jitter:
 
 .. code-block:: bash
@@ -193,16 +193,16 @@ RMS against the median predicted error) and writes a FITS file with
      - Default
      - Meaning
    * - ``frames`` *(positional)*
-     - —
+     - none
      - One or more ``wcc-sim`` FITS frames of the same field.
    * - ``--source-id ID``
-     - —
+     - none
      - Gaia ``source_id`` of the target (this or ``--ra``/``--dec``).
    * - ``--ra DEG``, ``--dec DEG``
-     - —
+     - none
      - Target coordinates; must match a catalog star within 2 arcsec.
    * - ``-o, --output`` *(required)*
-     - —
+     - none
      - Output FITS path (``STARS`` / ``PHOT`` / ``LC``).
    * - ``--method``
      - ``aperture``

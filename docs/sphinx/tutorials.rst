@@ -3,7 +3,7 @@ Tutorials
 
 These tutorials are runnable Jupyter notebooks from the ``notebooks/``
 directory of the repository, rendered here with their saved outputs. Each one
-is self-contained — download it and run it interactively to experiment. The
+is self-contained. Download it and run it interactively to experiment. The
 Gaia queries they perform are cached in ``notebooks/gaia_cache/``, so they
 run offline.
 

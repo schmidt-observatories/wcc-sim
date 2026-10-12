@@ -24,9 +24,9 @@ Starting from the source-only image in electrons:
 5. **Digitization.** Electrons are divided by the gain, the bias level is
    added, and the result is clipped to ``[0, n_reads × adc_max]`` ADU.
 
-With ``add_noise=False``, steps 3–4 are skipped and ``image_e`` equals
-the capped expectation of step 2 (``image_clean`` where nothing saturates)
-— useful for photometric closure tests.
+With ``add_noise=False``, steps 3 and 4 are skipped and ``image_e`` equals
+the capped expectation of step 2 (``image_clean`` where nothing saturates),
+which is what a photometric closure test wants.
 
 Three products come out of this: the **truth** ``image_clean`` (noiseless
 expectation, e-), the **pre-digitization** realization ``image_e`` (e-, may be
@@ -46,7 +46,7 @@ expectation, on every path alike.
 exposure time is split into ``n_reads`` equal frames that are summed.
 Consequences:
 
-- saturation is evaluated **per frame** — splitting a long exposure into
+- saturation is evaluated **per frame**, so splitting a long exposure into
   more reads is the way to keep bright stars unsaturated;
 - read-noise variance grows linearly with ``n_reads``;
 - the ADU ceiling of the summed image is ``n_reads × adc_max``.
@@ -56,8 +56,8 @@ Per-star saturation flags
 
 The FITS/output catalog carries a per-star ``saturated`` column computed by
 :func:`~wcc_sim.render.star_saturated`. It flags a star if **any** saturated
-pixel lies within 32 px of its center — a window, not just the central pixel,
-because the defocused PSFs are centrally depressed: a bright star can
+pixel lies within 32 px of its center. A window is needed, rather than the
+central pixel alone, because the defocused PSFs are centrally depressed: a bright star can
 saturate its ring while its central pixel stays below full well (the 2-wave
 ring extends to ~29 px).
 

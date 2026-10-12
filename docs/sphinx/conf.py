@@ -15,7 +15,7 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 # -- Project information -----------------------------------------------------
 project = "wcc-sim"
 author = "Gudmundur Stefansson"
-copyright = "2026, Schmidt Sciences / Astrophysics Institute"
+copyright = "2026, Schmidt Sciences / Schmidt Observatory System"
 
 # Pull the version straight from the installed/importable package.
 try:
@@ -116,8 +116,9 @@ html_theme_options = {
     "style_external_links": True,
 }
 html_static_path = ["_static"]
-html_logo = "_static/logo_schmidt_sciences.png"
+html_logo = "_static/logo_schmidt_observatory_system.png"
 html_title = f"wcc-sim {release}"
+html_css_files = ["custom.css"]
 
 
 # -- Copy the tutorial notebooks into the source tree at build time ----------
