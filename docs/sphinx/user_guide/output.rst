@@ -27,14 +27,21 @@ dataclass:
    * - ``wcs``
      - astropy TAN WCS of the frame.
    * - ``catalog``
-     - The injected catalog with ``x, y, spt, rate_e_s, in_image,
-       saturated`` added (see :doc:`catalog`).
+     - The injected catalog with ``x, y, spt, spt_fallback, rate_e_s,
+       psf_wavelength_nm, in_image, saturated`` added (see :doc:`catalog`).
    * - ``params``
      - Every input parameter plus derived quantities (plate scale, gain,
-       read noise, sky/dark rates, well depth, number of sources, ...).
+       read noise, sky/dark rates, saturation ceiling, wing and halo
+       settings, number of sources, ...); the header cards below are
+       written from it.
+   * - ``models``
+     - The PSF ingredients the render used (stamp, wing model, halo), kept
+       for :mod:`wcc_sim.psfreport` and the ``plot_*`` methods; not
+       written to FITS.
 
 ``field.write(path)`` (or ``output=`` on ``simulate_field``) writes the FITS
 file; ``field.to_hdulist()`` returns the ``HDUList`` without touching disk.
+``field.plot()`` and its siblings draw the images (see :doc:`plotting`).
 
 FITS layout
 -----------
@@ -63,12 +70,46 @@ FITS layout
 Header cards
 ------------
 
-Beyond the WCS keywords, the ``SCI`` header records the full provenance:
+Beyond the WCS keywords, the ``SCI`` header records the full provenance.
+Cards whose value is ``None`` for a run (no halo, single-mode detector) are
+left out.
 
-``RA_PNT, DEC_PNT, PA`` (pointing), ``SENSORF, FOCUS, EXPTIME, NREADS,
-JITTER, MAGLIM, SEED, GAIARAD`` (inputs), ``NSRC, PLTSCL, GAIN, BIAS,
-SATLEVEL, RDNOISE, DARK, SKYRATE, WELLDEP`` (derived), plus ``WCCSIMV`` / ``WCCETCV`` (software
-versions) and ``DATE`` (creation time, UTC).
+.. list-table::
+   :header-rows: 1
+   :widths: 22 78
+
+   * - Group
+     - Cards
+   * - Pointing
+     - ``RA_PNT``, ``DEC_PNT`` [deg, ICRS, array center], ``PA`` [deg E of N].
+   * - Inputs
+     - ``SENSORF``, ``FOCUS`` [waves], ``EXPTIME`` [s], ``NREADS``,
+       ``JITTER`` [mas], ``MAGLIM`` (absent when ``catalog=`` was given),
+       ``SEED`` (drawn and recorded when none was given), ``GAIARAD``
+       [arcsec], ``ADDNOISE``.
+   * - Geometry
+     - ``NSRC``, ``NPIX``, ``PLTSCL`` [mas/pix], ``PIXSZUM`` [micron],
+       ``STAMPPIX``, ``PSFOVER``.
+   * - Detector
+     - ``GAIN`` [e-/ADU], ``BIAS`` [ADU], ``GAINMODE``, ``SATLEVEL``
+       [e-, the per-frame ceiling min(well, ADC x gain)], ``WELLDEP``
+       [e-], ``RDNOISE`` [e-], ``DARK`` and ``SKYRATE`` [e-/s/pix].
+   * - PSF
+     - ``PSFWAVE`` [nm, the field-level wavelength; per-star values are in
+       ``CAT``], ``CHROMPSF``, ``WINGS``, ``WINGA`` (power-law slope),
+       ``WINGC`` (amplitude), ``WINGFLR`` [e-/pix, the drawn floor].
+   * - Scattered light
+     - ``SCATTER``, ``SCATFRAC``, ``SCATNORM`` (``F_FOCAL``, ``P_FULL`` or
+       ``USER``: which reference the fraction is quoted against),
+       ``SCATFILE`` (the FRED map), ``SCATRCH`` [pix, modelled reach].
+   * - Extended sources
+     - ``NEXTSRC``.
+   * - Software
+     - ``WCCSIMV``, ``WCCETCV`` (versions), ``DATE`` (creation time, UTC),
+       ``BUNIT``.
+
+The ``CLEAN`` extension carries ``BUNIT = 'electron'``; the ``CAT``
+extension is the output catalog of :doc:`catalog`.
 
 The WCS
 -------

@@ -30,7 +30,33 @@ key is used — e.g. ``zwo:r+1`` defaults to 1 wave, ``zwo:r`` to in-focus.
 
 The defocused PSFs are *annular*: the core is centrally depressed and most of
 the energy lands in a ring (radius ~29 px for 2 waves on the IMX455). This
-has consequences for saturation flagging (see :doc:`noise`).
+has consequences for saturation flagging (see :doc:`noise`). "N waves" is a
+Fringe Zernike Z4 coefficient of N waves (2N waves peak to valley), the
+convention of the Zemax runs. The Huygens images are recentred on their flux
+centroid before use, so the catalog position is the quantity a centroider
+recovers (the ring is slightly asymmetric, by 0.1 to 0.2 px).
+
+Which wavelength
+----------------
+
+In focus, the Airy core of each star is built at the effective wavelength of
+its spectral template through the band, the same choice ``wcc_etc`` makes
+for that star, rather than at the filter pivot. The pivot is ~130 nm too
+blue for an M dwarf in the broad band, which would give a 23 % too high peak
+pixel. The per-star value is recorded in the ``CAT`` column
+``psf_wavelength_nm``; the field-level PSF (wing fit, extended-source
+kernels, the PSF report) uses the pivot, recorded as ``PSFWAVE``.
+
+``wavelength_nm=`` pins every star to one wavelength instead. It changes
+the PSF geometry only: the synthetic photometry still integrates the full
+bandpass, so count rates do not move. Use it to put the core at the 450 nm
+of the stray-light ray trace, for instance. Defocus (``focus=1|2``) ignores
+it, since the Huygens images carry no wavelength model.
+
+``chromatic=True`` goes one step further and replaces each template's
+single-wavelength Airy core with a spectrum-weighted effective PSF (seven
+nodes across the band, reddened per component for extended sources). It is
+a documented no-op for ``focus != 0``.
 
 Oversampled rendering
 ---------------------
@@ -90,3 +116,36 @@ card.
 
 Both return a normalized 2-D array on the fine grid (sum = 1), ready for
 :func:`~wcc_sim.render.render_scene`.
+
+Beyond the stamp
+----------------
+
+A stamp is finite, and at a hard stretch its square edge sits ~100 sigma
+above the sky around a bright star. By default (``wings=True``) each star's
+PSF is continued beyond the stamp with an analytic power-law wing,
+``profile(r) = c r^alpha``, fitted to the outer annulus of the stamp itself
+(:func:`~wcc_sim.wings.fit_wing_model`; alpha = -3 in focus, the Airy
+envelope, steeper for the defocused PSFs). The stamp's outer 20 % is
+crossfaded into the model and the wing is drawn on a circular footprint out
+to the radius where ``flux x profile(r)`` falls to ``wing_floor_sigma``
+(default 0.1) of the per-pixel background noise. Every star is renormalised
+by the same factor so photometry stays magnitude independent; the fitted
+parameters and the floor are recorded as ``WINGA``, ``WINGC`` and
+``WINGFLR``. The measured scattered-light halo is a second additive term on
+top of this wing; see :doc:`scatter`. ``wings=False`` turns both off.
+
+The 0.1 sigma floor hides the truncation in any single pixel, but it is a
+systematic cut: a statistic averaging N pixels sees it at sqrt(N) times that
+level, so a scattered-light background measured over ~1e5 pixels needs
+``wing_floor_sigma`` of 0.01 or less (and a longer render).
+
+Looking at it
+-------------
+
+``field.plot_psf_profile()`` draws the azimuthally averaged profile of a
+star split into its Airy core, scattered-light halo and total against what
+landed in the noiseless image; ``field.psf_report(path)`` (CLI
+``--report``) writes the one-page report built around it; and
+:func:`wcc_sim.psfreport.psf_decomposition` returns the numbers. See
+:doc:`plotting` and the tutorials :doc:`../notebooks/02_psf_focus_modes` and
+:doc:`../notebooks/07_psf_wings`.
