@@ -47,7 +47,7 @@ def pick_references(
     Criteria: on-image, unsaturated, annulus + centroid box fully inside the
     frame, and isolated (no catalog neighbor within `iso_radius` px brighter
     than G + iso_dmag — saturated/off-frame neighbors count too). Survivors
-    are ranked by |G - G_target|, photometrically most similar first.
+    are ranked by ``|G - G_target|``, photometrically most similar first.
     """
     ny, nx = shape
     if iso_radius is None:
