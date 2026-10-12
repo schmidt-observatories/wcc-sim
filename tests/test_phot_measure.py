@@ -90,9 +90,12 @@ def test_psf_flux_matches_total(single_star_frame, star_frame, geom, model_psf):
         model,
         geom,
     )
+    # the PSF fit recovers the core; the scattered fraction sits in the halo,
+    # tens of thousands of pixels out, and is not part of the model
     expected = (
         float(single_star_frame.catalog["rate_e_s"][0])
         * star_frame.meta["exptime"]
+        * (1.0 - single_star_frame.params["scatter_fraction"])
     )
     assert flux[0] == pytest.approx(expected, rel=0.02)
     assert x_fit[0] == pytest.approx(x_true, abs=0.05)

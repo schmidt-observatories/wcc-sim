@@ -7,8 +7,15 @@ wcc_etc ships and combines with a diffraction core in
 
     total = (1 - f_scat) * core + f_scat * scatter / P_full
 
-``f_scat`` is the *instrument-wide* scattered fraction (5.542e-3 for the
-26-0212 run) -- a property of the optics, not of any stamp.
+``f_scat`` is the *instrument-wide* scattered fraction -- a property of the
+optics, not of any stamp. FRED quotes it two ways for the 26-0212 run:
+``P_FULL`` = 5.542e-3 per watt *launched at the aperture*, and ``F_FOCAL`` =
+7.13e-3 per watt *reaching the image plane*; they differ by the mirror
+throughput (0.777). A unit-sum PSF describes detected photons, so wcc-sim
+uses ``F_FOCAL`` by default and records the choice as ``SCATNORM`` in the
+FITS header. ``wcc_etc.scatter_psf.make_total_psf`` still uses ``P_FULL``,
+which understates the halo by 22%; pass ``frac_total=table.meta["P_FULL"]``
+to reproduce it.
 
 Why a 1D profile and not a 2D kernel
 ------------------------------------
@@ -356,8 +363,13 @@ def scatter_halo(mm_per_pixel, frac_total=None, table=None):
         Detector pixel pitch at the focal plane [mm]; sets the conversion from
         the profile's physical units to fraction per detector pixel.
     frac_total : float, optional
-        Instrument-wide scattered fraction. Defaults to FRED's own integrated
-        power for the map the profile was built from (5.542e-3).
+        Instrument-wide scattered fraction. Defaults to ``F_FOCAL`` from the
+        profile metadata (7.13e-3 for the packaged profile): scattered power
+        as a fraction of the power reaching the image plane, which is what a
+        unit-sum PSF of detected photons needs. ``table.meta["P_FULL"]``
+        (5.542e-3, per watt launched at the aperture) is the wcc_etc
+        convention. ``meta["SCATNORM"]`` records which one was used
+        (``F_FOCAL``, ``P_FULL`` or ``USER``).
     table : astropy.table.Table, optional
         A profile table; defaults to the packaged one.
     """
@@ -365,7 +377,13 @@ def scatter_halo(mm_per_pixel, frac_total=None, table=None):
     mm_per_pixel = float(mm_per_pixel)
     if mm_per_pixel <= 0.0:
         raise ValueError(f"mm_per_pixel must be > 0, got {mm_per_pixel!r}")
-    frac = float(table.meta["P_FULL"] if frac_total is None else frac_total)
+    if frac_total is None:
+        norm = "F_FOCAL" if table.meta.get("F_FOCAL") else "P_FULL"
+        frac = float(table.meta[norm])
+    else:
+        norm, frac = "USER", float(frac_total)
+    meta = dict(table.meta)
+    meta["SCATNORM"] = norm
     return ScatterHalo(
         r_px=np.asarray(table["r_mm"], dtype=float) / mm_per_pixel,
         frac_per_px=(
@@ -374,7 +392,7 @@ def scatter_halo(mm_per_pixel, frac_total=None, table=None):
             * frac
         ),
         frac_total=frac,
-        meta=dict(table.meta),
+        meta=meta,
     )
 
 

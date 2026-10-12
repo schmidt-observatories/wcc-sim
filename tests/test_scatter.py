@@ -99,6 +99,7 @@ def test_scaled_changes_the_total_scatter_fraction_not_the_shape():
 # --------------------------------------------------------------------------- #
 
 P_FULL_FRED = 5.542137968166e-3   # FRED "integrated power" for a 1 W source
+F_FOCAL_FRED = 7.13e-3            # FRED "fraction of total" reaching the image plane
 IRR_PEAK_FRED = 1.65013733315822e-05  # peak of the map [W/mm^2 per W]
 MM_PER_PIX_IMX = 0.00376
 
@@ -147,10 +148,50 @@ def test_halo_carries_the_scattered_fraction_inside_its_modelled_disc(halo, tabl
     # absolute FRED brightness is preserved, so the deposited energy is
     # frac_total * FDISC; the rest lands off the modelled disc (and off any
     # detector) and is deliberately not deposited
-    assert halo.frac_total == pytest.approx(P_FULL_FRED, rel=1e-9)
+    assert halo.frac_total == pytest.approx(F_FOCAL_FRED, rel=1e-9)
     assert halo.energy_beyond(0.0) == pytest.approx(
-        P_FULL_FRED * table.meta["FDISC"], rel=2e-3
+        F_FOCAL_FRED * table.meta["FDISC"], rel=2e-3
     )
+
+
+# --------------------------------------------------------------------------- #
+# Normalisation of the packaged profile (no FRED file needed)                  #
+# --------------------------------------------------------------------------- #
+
+
+def test_packaged_profile_defaults_to_the_image_plane_fraction():
+    """A unit-sum PSF counts detected photons, so the scattered fraction is
+    taken per watt reaching the image plane (F_FOCAL), not per watt launched
+    at the aperture (P_FULL); the two differ by the mirror throughput."""
+    from wcc_sim.scatter import load_scatter_table, scatter_halo
+
+    table = load_scatter_table()
+    halo = scatter_halo(MM_PER_PIX_IMX)
+    assert halo.meta["SCATNORM"] == "F_FOCAL"
+    assert halo.frac_total == pytest.approx(F_FOCAL_FRED, rel=1e-9)
+    assert halo.frac_total == pytest.approx(
+        table.meta["P_FULL"] / table.meta["THRUPUT"], rel=1e-9
+    )
+    assert halo.frac_total > table.meta["P_FULL"]
+
+
+def test_wcc_etc_convention_is_one_argument_away():
+    from wcc_sim.scatter import load_scatter_table, scatter_halo
+
+    table = load_scatter_table()
+    halo = scatter_halo(MM_PER_PIX_IMX, frac_total=table.meta["P_FULL"])
+    assert halo.meta["SCATNORM"] == "USER"
+    assert halo.frac_total == pytest.approx(P_FULL_FRED, rel=1e-9)
+
+
+def test_profile_without_f_focal_falls_back_to_p_full():
+    from wcc_sim.scatter import load_scatter_table, scatter_halo
+
+    table = load_scatter_table()
+    table.meta["F_FOCAL"] = None
+    halo = scatter_halo(MM_PER_PIX_IMX, table=table)
+    assert halo.meta["SCATNORM"] == "P_FULL"
+    assert halo.frac_total == pytest.approx(P_FULL_FRED, rel=1e-9)
 
 
 def test_profile_integral_matches_the_exact_2d_map_integral(table):
@@ -463,7 +504,8 @@ def _field(catalog, **kw):
 def test_pipeline_scatter_is_on_by_default(canned_catalog):
     field = _field(canned_catalog)
     assert field.params["scatter"] is True
-    assert field.params["scatter_fraction"] == pytest.approx(P_FULL_FRED)
+    assert field.params["scatter_fraction"] == pytest.approx(F_FOCAL_FRED)
+    assert field.params["scatter_norm"] == "F_FOCAL"
     assert "26-0212" in field.params["scatter_file"]
 
 
@@ -515,12 +557,13 @@ def test_pipeline_scatter_slightly_dims_the_near_wing(bright_pair):
 
 
 def test_scatter_extends_the_drawn_reach_of_a_bright_star(bright_pair):
-    """Measured: r_out grows from 597 px to 770 px for this G=8 star."""
+    """Measured: r_out grows from 597 px to ~825 px for this G=8 star
+    (770 px when the halo carried P_FULL instead of F_FOCAL)."""
     on, off = bright_pair
     assert _cut(off, 650) == 0.0        # diffraction wing already under floor
     assert _cut(on, 650) > 0.0          # halo is still above it
-    assert _cut(on, 700) > 0.0
-    assert _cut(on, 800) == 0.0         # past the combined r_out
+    assert _cut(on, 800) > 0.0
+    assert _cut(on, 900) == 0.0         # past the combined r_out
 
 
 def test_drawn_halo_reach_is_limited_by_the_wing_floor(bright_pair):
@@ -532,7 +575,7 @@ def test_drawn_halo_reach_is_limited_by_the_wing_floor(bright_pair):
     """
     on, _ = bright_pair
     assert on.params["scatter_reach_px"] > 36000.0
-    assert _cut(on, 800) == 0.0
+    assert _cut(on, 900) == 0.0
 
 
 def test_pipeline_scatter_off_matches_the_pre_scatter_rendering(canned_catalog):
@@ -560,7 +603,8 @@ def test_pipeline_records_scatter_in_the_fits_header(canned_catalog, tmp_path):
     _field(canned_catalog, output=str(out))
     hdr = fits.getheader(out, 0)
     assert hdr["SCATTER"] is True
-    assert hdr["SCATFRAC"] == pytest.approx(P_FULL_FRED)
+    assert hdr["SCATFRAC"] == pytest.approx(F_FOCAL_FRED)
+    assert hdr["SCATNORM"] == "F_FOCAL"
 
 
 def test_cli_no_scatter_flag(canned_catalog, tmp_path, monkeypatch):
@@ -613,8 +657,14 @@ def test_profile_matches_wcc_etc_make_total_psf(halo):
     different code path from the azimuthal averaging here, and the one that
     produced the reference combined-PSF FITS. Absolute surface brightness,
     not just shape, has to match: this is what pins the halo's normalization.
+
+    wcc_etc still scales the map by P_FULL (per watt launched; wcc-etc #120),
+    so the comparison is made at that fraction; the default F_FOCAL halo is
+    the same shape times THRUPUT.
     """
     from wcc_etc.scatter_psf import make_total_psf
+
+    halo = halo.scaled(halo.meta["P_FULL"])
 
     res = make_total_psf(
         sensor="imx455", extent=1001, wavelength=450e-9, jitter_sigma_mas=0.0,

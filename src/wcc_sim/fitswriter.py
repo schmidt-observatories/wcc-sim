@@ -42,6 +42,7 @@ _CARDS = {
     "wavelength_nm": ("PSFWAVE", "[nm] field PSF wavelength (per-star: CAT)"),
     "scatter": ("SCATTER", "measured scattered-light halo applied"),
     "scatter_fraction": ("SCATFRAC", "instrument-wide scattered fraction"),
+    "scatter_norm": ("SCATNORM", "SCATFRAC reference: F_FOCAL|P_FULL|USER"),
     "scatter_file": ("SCATFILE", "FRED stray-light map the halo came from"),
     "scatter_reach_px": ("SCATRCH", "[pix] modelled halo radial reach"),
     "wing_alpha": ("WINGA", "wing power-law slope (empty if wings off)"),

@@ -210,7 +210,7 @@ def simulate_field(
     contamination of faint neighbours is modelled everywhere on the array.
     Beyond ~1000 px it exceeds the diffraction wing by an order of magnitude.
     `scatter_fraction` overrides the instrument-wide scattered fraction
-    (default: FRED's own 5.542e-3). The halo is drawn by the wing machinery,
+    (default: FRED's ``F_FOCAL``, 7.13e-3; see wcc_sim.scatter). The halo is drawn by the wing machinery,
     so `wings=False` turns it off as well; `params["scatter"]` reports what
     actually ran.
 
@@ -462,6 +462,7 @@ def simulate_field(
         "scatter_fraction": (
             float(halo.frac_total) if halo is not None else None
         ),
+        "scatter_norm": halo.meta.get("SCATNORM") if halo is not None else None,
         "scatter_file": (
             str(halo.meta.get("SCATFILE")) if halo is not None else None
         ),

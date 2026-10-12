@@ -13,7 +13,7 @@ without building the whole page.
 The headline number is the Airy-peak-to-scatter-peak contrast, defined
 exactly as ``wcc_etc.scatter_psf.report_diagnostics`` defines it -- the
 analytic Airy peak of a ``(1 - f_scat)`` core over the halo's central
-irradiance, both in W/mm^2 per watt of source -- so it is directly
+irradiance, both in W/mm^2 per watt reaching the image plane -- so it is directly
 comparable with the wcc_etc build report. At 450 nm it is ~1e9.
 
 Rendering uses a plain (pyplot-free) matplotlib Figure, so it works
@@ -237,8 +237,9 @@ def reproduction_call(field, width=4):
         elif isinstance(value, tuple):
             items.append(f"{key}={value}")
         elif isinstance(value, float):
-            # repr, not %g: %g would round scatter_fraction to 0.00554214 and
-            # the snippet would no longer reproduce the figure it sits under
+            # repr, not %g: %g keeps 6 significant digits, so a user-supplied
+            # scatter_fraction could round and the snippet would no longer
+            # reproduce the figure it sits under
             items.append(f"{key}={value!r}")
         else:
             items.append(f"{key}={value}")

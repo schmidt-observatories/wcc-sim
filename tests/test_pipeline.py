@@ -217,6 +217,15 @@ def test_m_dwarf_peak_pixel_is_lower_than_a_pivot_render(canned_catalog):
     assert eff.image_clean.max() < 0.9 * piv.image_clean.max()
 
 
+def test_scatter_normalisation_is_recorded(canned_catalog):
+    f = run(canned_catalog)
+    assert f.params["scatter_norm"] == "F_FOCAL"
+    assert f.params["scatter_fraction"] == pytest.approx(7.13e-3, rel=1e-9)
+    g = run(canned_catalog, scatter_fraction=5.0e-3)
+    assert g.params["scatter_norm"] == "USER"
+    assert g.params["scatter_fraction"] == pytest.approx(5.0e-3)
+
+
 def test_unseeded_run_records_a_seed_that_repeats_it(canned_catalog):
     """seed=None must not mean 'unrepeatable': the drawn seed is recorded."""
     f1 = run(canned_catalog, seed=None)

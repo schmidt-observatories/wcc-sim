@@ -79,15 +79,18 @@ def test_airy_to_scatter_peak_contrast_is_about_1e9(decomposition):
 
     Same definition as wcc_etc.scatter_psf.report_diagnostics -- the
     analytic Airy peak for a (1 - f_scat) core over the halo's central
-    irradiance, both in W/mm^2 per watt of source.
+    irradiance, both in W/mm^2 per watt reaching the image plane.
     """
-    assert decomposition["contrast"] == pytest.approx(1.07e9, rel=0.05)
+    # 1.07e9 per watt launched at the aperture (P_FULL); per watt reaching
+    # the image plane (F_FOCAL, the default since #13) the halo is 1/0.777
+    # brighter, so the contrast is 0.777 x that
+    assert decomposition["contrast"] == pytest.approx(8.3e8, rel=0.05)
 
 
 def test_peak_irradiances_are_in_physical_units(decomposition):
     assert decomposition["airy_peak_irradiance"] == pytest.approx(1.714e4, rel=0.01)
     assert decomposition["scatter_peak_irradiance"] == pytest.approx(
-        1.597e-5, rel=0.01
+        2.054e-5, rel=0.01  # 1.597e-5 per launched watt / 0.777
     )
 
 
@@ -415,7 +418,7 @@ def test_decomposition_reports_both_crossover_definitions(decomposition):
     d = decomposition
     assert d["crossover_mm"] == pytest.approx(d["crossover_px"] * 0.00376, rel=1e-6)
     assert d["crossover_fringed_mm"] > d["crossover_mm"]
-    assert d["crossover_fringed_mm"] == pytest.approx(6.1, rel=0.10)
+    assert d["crossover_fringed_mm"] == pytest.approx(4.9, rel=0.10)  # 6.1 mm at P_FULL
 
 
 def test_crossover_moves_inward_when_the_halo_is_brighter(mag0_catalog):

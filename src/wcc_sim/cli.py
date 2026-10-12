@@ -43,7 +43,7 @@ def build_parser():
                         "light); implied by --no-wings")
     p.add_argument("--scatter-fraction", type=float, default=None,
                    help="instrument-wide scattered fraction (default: FRED's "
-                        "5.542e-3)")
+                        "F_FOCAL, 7.13e-3)")
     p.add_argument("--cache-dir", default=None, help="Gaia query cache directory")
     p.add_argument("--gain-mode", default=None,
                    help="readout gain mode for multi-mode detectors "
