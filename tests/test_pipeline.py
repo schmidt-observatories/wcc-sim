@@ -233,3 +233,30 @@ def test_unseeded_run_records_a_seed_that_repeats_it(canned_catalog):
     f2 = run(canned_catalog, seed=f1.params["seed"])
     np.testing.assert_array_equal(f1.image_adu, f2.image_adu)
     assert run(canned_catalog, seed=None).params["seed"] != f1.params["seed"]
+
+
+def test_offset_equals_field_at_offset_pointing(canned_catalog):
+    shifted = run(canned_catalog, offset_arcsec=(0.4, -0.3), pa=25.0)
+    p = shifted.params
+    assert (p["centre_ra"], p["centre_dec"]) == (RA0, DEC0)
+    assert (p["offset_ra_arcsec"], p["offset_dec_arcsec"]) == (0.4, -0.3)
+    assert p["dec"] == pytest.approx(DEC0 - 0.3 / 3600, abs=1e-9)
+    from wcc_sim import simulate_field
+
+    direct = simulate_field(p["ra"], p["dec"], catalog=canned_catalog, shape=SHAPE,
+                            stamp_npix=33, seed=42, sensorfilter="zwo:r", pa=25.0)
+    np.testing.assert_array_equal(shifted.image_adu, direct.image_adu)
+    np.testing.assert_array_equal(shifted.catalog["x"], direct.catalog["x"])
+
+
+def test_offset_cards_only_when_offset(canned_catalog):
+    hdr0 = run(canned_catalog).to_hdulist()[0].header
+    assert "CEN_RA" not in hdr0 and "OFFSRA" not in hdr0
+    hdr = run(canned_catalog, offset_arcsec=(1.0, 0.0)).to_hdulist()[0].header
+    assert hdr["OFFSRA"] == 1.0 and hdr["CEN_DEC"] == DEC0
+
+
+@pytest.mark.parametrize("bad", [(1.0,), (np.nan, 0.0), (0.0, np.inf)])
+def test_bad_offset_rejected(canned_catalog, bad):
+    with pytest.raises(ValueError, match="offset_arcsec"):
+        run(canned_catalog, offset_arcsec=bad)

@@ -13,7 +13,9 @@ memory for a full frame; sampling profiles as dense point grids would need
 (docs/superpowers/specs/2026-07-02-extended-sources-cepheids-design.md).
 """
 
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from typing import ClassVar
 
 import numpy as np
 from astropy import units as u
@@ -27,6 +29,34 @@ from .starflux import REF_MAG, rate_for_ab, rate_for_spt
 _REFINE = 9         # subgrid factor for the central cusp
 _REFINE_HALF_MIN = 8   # px; refinement box half-width bounds
 _REFINE_HALF_MAX = 64
+
+
+@dataclass(frozen=True, kw_only=True)
+class ExtendedComponent(ABC):
+    """Base of extended sources: something whose light can be mapped onto the detector.
+
+    Only what every extended source has lives here: a `label` and the methods.
+    Fields are keyword-only so subclasses can still take positional fields.
+    Components describe the source only; observation settings (filter, detector
+    WCS, sub-grid k) are method arguments.
+    """
+
+    label: str | None = None
+
+    kind: ClassVar[str] = "extended"
+
+    @abstractmethod
+    def rate_map(self, det_wcs, det_shape, plate_scale_mas, sensorfilter, k=None):
+        """Unconvolved e-/s per sub-pixel on the detector sub-grid (resample.Subgrid;
+        total_in = the source's total e-/s), or None if it misses the detector."""
+
+    @abstractmethod
+    def footprint(self, det_wcs, det_shape):
+        """Detector pixels (y0, y1, x0, x1) the source covers, or None."""
+
+    def to_record(self):
+        """Description of the source for the COMP table (FITS output)."""
+        return {"label": self.label or "", "kind": self.kind}
 
 
 @dataclass(frozen=True)

@@ -17,6 +17,31 @@
   the private `catalog._empty_table`).
 - Tutorial notebook `11_galaxies_phangs`: full-frame g/r/i WCC images of
   NGC 1300 and NGC 4321 from PHANGS-HST and a colour composite.
+- `wcc_sim.simulate_image`: simulate a WCC exposure of a sky image (FITS with a
+  celestial WCS and physical `BUNIT`: Jy/pixel, Jy/arcsec2, MJy/sr, F_lambda or
+  electron/s), e.g. a POLARIS radiative-transfer model. The image is resampled
+  flux-conservingly (`reproject_exact`) onto a detector-aligned k x k sub-grid
+  and PSF-convolved per sub-pixel phase (`render.render_subgrid`, identical to
+  one `add_star` per sub-pixel), so compact structure finer than the detector
+  pixel (a planet next to its star) is kept. Built from public pieces:
+  `SkyImageComponent` (validated image, `fitsimage.ImageInput`),
+  `detector_frame` (pointing with `offset_arcsec` and `pa`) and
+  `WCCObservation` (`rate_image()`, noiseless e-/s; `expose()`, noise and
+  saturation, returning a `SimulatedField`).
+- FITS output of image simulations: a `COMP` table (one row per component) and
+  the SCI cards `PNTSRC`, `CEN_RA`/`CEN_DEC`, `OFFSRA`/`OFFSDEC`, `IMGTOT`,
+  `IMGRATE`, `IMGSUBK`, `IMGBUNIT`, `FLUXORIG`, `FLUXJY`, `FLUXFLAM`,
+  `FLUXBAND`, `BANDPIV`, `BANDWID`. `fluxrate.band_fluxes` converts a count
+  rate back to the flux in the detector band.
+- `simulate_field(..., offset_arcsec=(dRA, dDec))`: offset pointing (e.g.
+  dithers), applied on the sky before `pa`; the default (0, 0) gives the same
+  output as before.
+- `render.unit_stamp`: the PSF stamp construction factored out of `add_star`
+  so stars and images use the same stamp; stars are rendered bit-identically.
+- Optional extra `pip install wcc-sim[image]` (reproject, without galsim); the
+  `test` extra now includes reproject.
+- Tutorial notebook `12_image_sources`: a synthetic star + inclined ring +
+  planet image through each step, with flux-conservation checks.
 
 ## 0.1.0 (2026-10-12)
 

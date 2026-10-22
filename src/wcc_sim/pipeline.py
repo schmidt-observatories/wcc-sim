@@ -11,7 +11,8 @@ from astropy.wcs import WCS
 
 from .catalog import query_gaia
 from .chromatic import effective_psf_for_spt, effective_wavelength_nm_for_spt
-from .detectors import get_geometry, make_base_simulation, saturation_level_e
+from .detectors import (detector_frame, get_geometry, make_base_simulation,
+                        saturation_level_e)
 from .extended import render_extended
 from .fitswriter import build_hdulist
 from .psf import DEFAULT_STAMP, render_oversampled_psf
@@ -24,7 +25,6 @@ from .render import (
 from .scatter import halo_for_sensorfilter
 from .starflux import (color_fallback, column_floats, rates_for_catalog,
                        sky_and_dark_rates)
-from .wcsutil import build_wcs
 from .wings import CombinedWing, fit_wing_model
 
 
@@ -45,6 +45,9 @@ class SimulatedField:
     #: PSF ingredients kept for diagnostics (see wcc_sim.psfreport); not
     #: written to FITS.
     models: dict = field(default_factory=dict, repr=False)
+    #: extended components (WCCObservation.components_table), written as the
+    #: COMP extension; None for simulate_field.
+    components: Table | None = field(default=None, repr=False)
 
     def to_hdulist(self, write_clean=True):
         return build_hdulist(
@@ -54,6 +57,7 @@ class SimulatedField:
             self.wcs,
             self.params,
             image_clean=self.image_clean if write_clean else None,
+            components=self.components,
         )
 
     def write(self, path, write_clean=True):
@@ -181,6 +185,7 @@ def simulate_field(
     chromatic=False,
     wing_floor_sigma=0.1,
     gain_mode=None,
+    offset_arcsec=(0.0, 0.0),
 ):
     """Simulate one WCC detector image of the Gaia field at (ra, dec).
 
@@ -244,20 +249,32 @@ def simulate_field(
     clips at 552 e- per frame, 15x below the 7500 e- well; `gain_mode="low"`
     (1x) lets the well clip first. The ceiling that applied is recorded as
     `params["saturation_e"]` (header SATLEVEL) and the mode as GAINMODE.
+
+    `offset_arcsec=(dRA, dDec)` moves the pointing away from (ra, dec) on the
+    sky before `pa` rotates the detector (detectors.detector_frame, the same
+    convention as simulate_image), e.g. for dithers. The Gaia query and
+    params["ra"/"dec"] then use the offset pointing; (ra, dec) and the offset
+    are recorded as CEN_RA/CEN_DEC and OFFSRA/OFFSDEC. The default (0, 0) gives
+    exactly the field at (ra, dec), as before.
     """
     _validate_inputs(
         ra, dec, focus, exptime, n_reads, mag_limit, oversample, shape,
         scatter_fraction, wing_floor_sigma, catalog,
     )
+    if (len(offset_arcsec) != 2
+            or not all(np.isfinite(float(v)) for v in offset_arcsec)):
+        raise ValueError(f"offset_arcsec must be (dRA, dDec) in arcsec, got {offset_arcsec!r}")
+    offset = (float(offset_arcsec[0]), float(offset_arcsec[1]))
     sim = make_base_simulation(sensorfilter, gain_mode=gain_mode)
     geom = get_geometry(sensorfilter, sim=sim)
     if focus is None:
         focus = geom.default_focus
-    if shape is None:
-        shape = (geom.ny, geom.nx)
+    frame = detector_frame(sensorfilter, (ra, dec), offset_arcsec=offset, pa=pa,
+                           shape=shape)
+    centre = (float(ra), float(dec))
+    ra, dec = frame.pointing                 # the detector centre from here on
+    wcs, shape = frame.wcs, frame.shape
     ny, nx = shape
-
-    wcs = build_wcs(ra, dec, geom.plate_scale_mas, pa, shape)
 
     half_diag_arcsec = (
         0.5 * np.hypot(nx, ny) * geom.plate_scale_mas / 1000.0
@@ -486,6 +503,9 @@ def simulate_field(
         "n_extended": len(extended_sources) if extended_sources else 0,
         "wavelength_nm": psf_wavelength_nm,
     }
+    if offset != (0.0, 0.0):   # only then: unchanged cards for the default pointing
+        params.update(centre_ra=centre[0], centre_dec=centre[1],
+                      offset_ra_arcsec=offset[0], offset_dec_arcsec=offset[1])
 
     result = SimulatedField(
         image_adu=out["image_adu"],

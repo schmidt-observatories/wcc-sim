@@ -127,3 +127,110 @@ def test_invalid_n_reads_raises(base_sim):
             np.zeros((8, 8), dtype=np.float32), base_sim, 90.0, 0,
             np.random.default_rng(0),
         )
+
+
+# -- unit_stamp / render_subgrid ----------------------------------------------- #
+
+def _moffat_psf(n_stamp, os_, beta=2.5, alpha_px=1.5):
+    """Normalised Moffat PSF oversampled by os_ (centre in the middle sample)."""
+    n = n_stamp * os_
+    c = (n - 1) / 2
+    yy, xx = np.mgrid[:n, :n]
+    r = np.hypot(xx - c, yy - c) / os_
+    psf = (1 + (r / alpha_px) ** 2) ** (-beta)
+    return psf / psf.sum()
+
+
+def _old_add_star_stamp(psf_os, sx, sy, oversample, flux_e, wing, blend, half):
+    """add_star's stamp formula before unit_stamp was factored out (reference)."""
+    from wcc_sim.render import bin_oversampled
+
+    stamp = bin_oversampled(np.roll(psf_os, (sy, sx), axis=(0, 1)), oversample)
+    if wing is None:
+        return stamp * flux_e
+    flux_e = flux_e / wing.flux_norm(float(half))
+    return flux_e * (blend.core_scale * (stamp * blend.w + blend.model * (1.0 - blend.w))
+                     + blend.halo)
+
+
+@pytest.mark.parametrize("use_wing", [False, True])
+def test_add_star_bit_identical_after_unit_stamp(use_wing):
+    from wcc_sim.render import add_star, bin_oversampled, wing_blend
+    from wcc_sim.wings import fit_wing_model
+
+    os_, n_stamp = 11, 21
+    psf = _moffat_psf(n_stamp, os_)
+    wing = fit_wing_model(bin_oversampled(psf, os_)) if use_wing else None
+    blend = wing_blend(n_stamp, wing) if use_wing else None
+    for x, y, f in [(30.0, 30.0, 1000.0), (31.27, 29.64, 55.5), (40.49, 20.51, 1.0)]:
+        image = np.zeros((64, 64))
+        add_star(image, psf, x, y, f, os_, wing=wing, blend=blend)
+        x0, y0 = int(round(x)), int(round(y))
+        ref = _old_add_star_stamp(psf, int(round((x - x0) * os_)), int(round((y - y0) * os_)),
+                                  os_, f, wing, blend, n_stamp // 2)
+        h = n_stamp // 2
+        assert np.array_equal(image[y0 - h:y0 + h + 1, x0 - h:x0 + h + 1], ref)
+
+
+def _render_both(k, data, wing_on, y0=10, x0=10, n_stamp=15, canvas=64):
+    """render_subgrid vs one add_star per sub-pixel, on the same canvas."""
+    from wcc_sim.observation import WCCObservation
+    from wcc_sim.render import add_star, bin_oversampled, render_subgrid, wing_blend
+    from wcc_sim.resample import Subgrid
+    from wcc_sim.wings import fit_wing_model
+
+    psf = _moffat_psf(n_stamp, k)
+    wing = fit_wing_model(bin_oversampled(psf, k)) if wing_on else None
+    blend = wing_blend(n_stamp, wing) if wing_on else None
+    sub = Subgrid(data, y0, x0, k, float(data.sum()))
+    out = render_subgrid(sub, psf, wing, blend)
+    fast = np.zeros((canvas, canvas))
+    WCCObservation._add_cutout(fast, out)
+    slow = np.zeros((canvas, canvas))
+    shift = (k - 1) // 2
+    for a, b in zip(*np.nonzero(data)):
+        x = x0 + b // k + (b % k - shift) / k
+        y = y0 + a // k + (a % k - shift) / k
+        add_star(slow, psf, x, y, data[a, b], k, wing=wing, blend=blend)
+    return sub, out, fast, slow
+
+
+@pytest.mark.parametrize("wing_on", [False, True])
+def test_render_subgrid_equals_add_star_per_subpixel(wing_on):
+    data = np.random.default_rng(4).uniform(0.0, 1.0, (24, 24))   # 8 x 8 px, k = 3
+    _, _, fast, slow = _render_both(3, data, wing_on)
+    np.testing.assert_allclose(fast, slow, rtol=1e-12, atol=1e-14 * slow.max())
+
+
+def test_render_subgrid_point_limit_k11():
+    data = np.zeros((33, 33))      # 3 x 3 px at k = 11
+    data[17, 9] = 500.0            # one sub-pixel, off-centre
+    _, _, fast, slow = _render_both(11, data, wing_on=True)
+    np.testing.assert_allclose(fast, slow, rtol=1e-12, atol=1e-14 * slow.max())
+
+
+def test_render_subgrid_flux_and_origin():
+    data = np.random.default_rng(5).uniform(0.0, 1.0, (15, 15))   # k = 5, 3 x 3 px
+    sub, out, _, _ = _render_both(5, data, wing_on=False)
+    assert out.k == 1 and out.total_in == sub.total_in
+    assert (out.y0, out.x0) == (sub.y0 - 7, sub.x0 - 7)           # half of a 15-px stamp
+    assert out.data.shape == (3 + 14, 3 + 14)
+    assert out.data.sum() == pytest.approx(data.sum(), rel=1e-12)
+
+
+def test_render_subgrid_peak_lands_in_right_pixel():
+    data = np.zeros((15, 15))
+    data[7, 12] = 1.0              # detector pixel (1, 2) of the cutout, centre sub-pixel
+    _, _, fast, _ = _render_both(5, data, wing_on=False, y0=20, x0=30)
+    assert np.unravel_index(np.argmax(fast), fast.shape) == (21, 32)
+
+
+def test_render_subgrid_rejects_mismatched_psf():
+    from wcc_sim.render import render_subgrid
+    from wcc_sim.resample import Subgrid
+
+    sub = Subgrid(np.ones((9, 9)), 0, 0, 3, 81.0)
+    with pytest.raises(ValueError, match="multiple of"):
+        render_subgrid(sub, _moffat_psf(7, 5))           # 35 samples, not / 3
+    with pytest.raises(ValueError, match="odd"):
+        render_subgrid(sub, _moffat_psf(14, 3))          # even stamp
