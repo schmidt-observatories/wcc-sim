@@ -152,3 +152,16 @@ def test_defocused_star_lands_on_its_catalog_position():
     x0, y0 = f.catalog["x"][0], f.catalog["y"][0]
     assert cx == pytest.approx(x0, abs=0.05)
     assert cy == pytest.approx(y0, abs=0.05)
+
+
+def test_centroid_offset_is_warning_free():
+    """#54: `@` on macOS Accelerate raised spurious RuntimeWarnings here."""
+    import warnings
+
+    from wcc_sim.psf import centroid_offset
+
+    p = np.random.default_rng(0).random((401, 401))
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        dx, dy = centroid_offset(p / p.sum())
+    assert abs(dx) < 0.5 and abs(dy) < 0.5
