@@ -32,8 +32,10 @@ def centroid_offset(psf):
     n = psf.shape[0]
     i = np.arange(n, dtype=float)
     total = psf.sum()
-    cx = (psf.sum(axis=0) @ i) / total
-    cy = (psf.sum(axis=1) @ i) / total
+    # elementwise sums, not `@`: numpy's Accelerate build on macOS raises
+    # spurious divide-by-zero / overflow RuntimeWarnings from matmul here
+    cx = (psf.sum(axis=0) * i).sum() / total
+    cy = (psf.sum(axis=1) * i).sum() / total
     c = (n - 1) / 2.0
     return float(cx - c), float(cy - c)
 
