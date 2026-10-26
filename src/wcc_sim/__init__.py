@@ -1,4 +1,4 @@
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 #: Oldest wcc_etc this package works with (public ``wcc_etc.io`` names).
 WCC_ETC_MINIMUM = "0.1.0"

@@ -314,6 +314,18 @@ def test_image_component_conserves_flux():
     ) is None
 
 
+def test_missing_optional_dependency_names_the_extra(monkeypatch):
+    import sys
+
+    from astropy.wcs import WCS
+    from wcc_sim.extended import ImageComponent, render_component_profile
+
+    monkeypatch.setitem(sys.modules, "reproject", None)   # simulate not installed
+    comp = ImageComponent(data=np.zeros((4, 4), dtype=np.float32), wcs=WCS(naxis=2), zp_ab=25.0)
+    with pytest.raises(ImportError, match=r"wcc-sim\[galaxies\]"):
+        render_component_profile(comp, _wcs(), SHAPE, PLATE_MAS, "zwo:r")
+
+
 def test_image_component_rejects_integer_data():
     from astropy.wcs import WCS
     from wcc_sim.extended import ImageComponent

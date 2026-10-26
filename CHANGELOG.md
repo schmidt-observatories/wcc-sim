@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.1 (2026-10-21)
 
 - `wcc_sim.GalSimComponent`: an extended source described by any
   `galsim.GSObject` (bulge+disk sums, shears, RealGalaxy), normalized by
@@ -15,6 +15,8 @@
 - galsim and reproject are an optional extra: `pip install wcc-sim[galaxies]`.
 - `wcc_sim.empty_catalog()`: public way to skip the Gaia query (previously
   the private `catalog._empty_table`).
+- A missing `galsim` or `reproject` now raises an ImportError naming the
+  `galaxies` extra instead of a bare ModuleNotFoundError.
 - Tutorial notebook `11_galaxies_phangs`: full-frame g/r/i WCC images of
   NGC 1300 and NGC 4321 from PHANGS-HST and a colour composite.
 

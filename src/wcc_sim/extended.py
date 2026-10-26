@@ -168,6 +168,19 @@ def _r999_pix(n, r_eff_pix):
     return r_eff_pix * (float(gammaincinv(2.0 * n, 0.999)) / bn) ** n
 
 
+def _optional(name):
+    """Import an optional dependency with an install hint on failure."""
+    import importlib
+
+    try:
+        return importlib.import_module(name)
+    except ImportError:
+        raise ImportError(
+            f"{name} is not installed; GalSimComponent/ImageComponent need the "
+            f"'galaxies' extra: pip install 'wcc-sim[galaxies]' (or pip install {name})"
+        ) from None
+
+
 def render_galsim_profile(comp, wcs, shape, plate_scale_mas, sensorfilter):
     """GalSimComponent surface brightness in e-/s/pix on the native grid
     (unconvolved); None if its footprint misses the frame.
@@ -180,8 +193,7 @@ def render_galsim_profile(comp, wcs, shape, plate_scale_mas, sensorfilter):
     The central cusp box is re-drawn on a _REFINE x subgrid and summed, as
     the Sersic path does, so compact or high-n profiles keep their flux.
     """
-    import galsim
-
+    galsim = _optional("galsim")
     if not isinstance(comp.profile, galsim.GSObject):
         raise TypeError("profile must be a galsim.GSObject")
     ny, nx = shape
@@ -227,8 +239,8 @@ def render_image_profile(comp, wcs, shape, plate_scale_mas, sensorfilter):
     from astropy.coordinates import SkyCoord
     from astropy.nddata import Cutout2D, NoOverlapError
     from astropy.wcs.utils import proj_plane_pixel_area
-    from reproject import reproject_interp
 
+    reproject_interp = _optional("reproject").reproject_interp
     ny, nx = shape
     pix_out_arcsec2 = (plate_scale_mas / 1000.0) ** 2
     pix_in_arcsec2 = proj_plane_pixel_area(comp.wcs) * 3600.0**2
