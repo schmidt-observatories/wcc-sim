@@ -1,11 +1,17 @@
 """Detector geometry for the WCC focal plane (array dims live here, not in wcc_etc)."""
 
 from dataclasses import dataclass
+from functools import lru_cache
+from typing import NamedTuple
 
 from astropy import units as u
+from astropy.coordinates import SkyCoord
+from astropy.wcs import WCS
 from wcc_etc import Simulation
 from wcc_etc.io import KIND_NAMES, SENSORFILTER_FOCUS
 from wcc_etc.scene import get_scene
+
+from .wcsutil import build_wcs
 
 # Full-frame pixel counts (manufacturer values; wcc_etc Sensor only stores area).
 ARRAY_DIMS = {
@@ -80,3 +86,45 @@ def get_geometry(sensorfilter, sim=None):
         plate_scale_mas=plate_mas,
         default_focus=FOCUS_WAVES[SENSORFILTER_FOCUS[sensorfilter]],
     )
+
+
+@lru_cache(maxsize=None)
+def _cached_geometry(sensorfilter):
+    return get_geometry(sensorfilter)
+
+
+class DetectorFrame(NamedTuple):
+    """A detector placed on the sky: WCS, array shape and pixel scale."""
+
+    wcs: WCS                 # TAN WCS with pa applied
+    shape: tuple             # (ny, nx)
+    plate_scale_mas: float
+    sensorfilter: str
+    pointing: tuple          # (ra, dec) [deg] of the detector centre
+    pa: float                # detector +y axis, deg E of N
+    centre: tuple = None     # (ra, dec) [deg] the offset was applied to
+    offset_arcsec: tuple = (0.0, 0.0)   # (dRA, dDec) [arcsec] from centre to pointing
+
+
+def detector_frame(sensorfilter, centre, offset_arcsec=(0.0, 0.0), pa=0.0, shape=None):
+    """Detector `sensorfilter` pointed at `centre` (ra, dec) [deg], offset, then rotated.
+
+    The offset (dRA, dDec) [arcsec] is applied first, on the sky
+    (SkyCoord.spherical_offsets_by), giving the pointing; `pa` then rotates the
+    detector about the pointing (build_wcs convention). `shape` defaults to the
+    full detector; a smaller (ny, nx) gives a subarray centred on the pointing.
+    """
+    geom = _cached_geometry(sensorfilter)
+    shape = (geom.ny, geom.nx) if shape is None else tuple(shape)
+    if offset_arcsec[0] == 0 and offset_arcsec[1] == 0:
+        # exactly the centre: no SkyCoord round trip, so the WCS is bit-identical
+        # to build_wcs(centre, ...) as simulate_field always built it
+        pointing = (float(centre[0]), float(centre[1]))
+    else:
+        moved = SkyCoord(centre[0] * u.deg, centre[1] * u.deg).spherical_offsets_by(
+            offset_arcsec[0] * u.arcsec, offset_arcsec[1] * u.arcsec)
+        pointing = (float(moved.ra.deg), float(moved.dec.deg))
+    wcs = build_wcs(pointing[0], pointing[1], geom.plate_scale_mas, pa, shape)
+    return DetectorFrame(wcs, shape, geom.plate_scale_mas, sensorfilter, pointing, pa,
+                         (float(centre[0]), float(centre[1])),
+                         (float(offset_arcsec[0]), float(offset_arcsec[1])))

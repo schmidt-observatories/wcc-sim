@@ -56,6 +56,12 @@ data. The rest each cover one topic.
        from PHANGS-HST mosaics via ``ImageComponent``, written as FITS, and
        a Lupton colour composite. Downloads ~3 GB of HST data on first
        run and takes a few minutes; see :doc:`user_guide/galaxies`.
+   * - :doc:`notebooks/12_image_sources`
+     - Simulate a sky image (star, inclined ring, planet) instead of a
+       catalog: ``SkyImageComponent``, flux to count rate, ``detector_frame``
+       with offset and position angle, flux-conserving resampling,
+       ``WCCObservation`` (PSF, wings, halo), exposures, ``simulate_image``,
+       the FITS header and COMP table, and several components.
 
 .. toctree::
    :maxdepth: 1
@@ -72,3 +78,4 @@ data. The rest each cover one topic.
    notebooks/09_wcc_phot_photometry
    notebooks/10_plotting
    notebooks/11_galaxies_phangs
+   notebooks/12_image_sources

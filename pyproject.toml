@@ -35,8 +35,9 @@ wcc-sim = "wcc_sim.cli:main"
 wcc-phot = "wcc_phot.cli:main"
 
 [project.optional-dependencies]
-test = ["pytest", "ruff"]
+test = ["pytest", "ruff", "reproject>=0.10"]   # reproject: tests of the image sources
 galaxies = ["galsim>=2.5", "reproject>=0.10"]   # GalSimComponent / ImageComponent
+image = ["reproject>=0.10"]   # SkyImageComponent / simulate_image (wcc_sim.resample), no galsim
 docs = [
     "sphinx",
     "sphinx-rtd-theme",

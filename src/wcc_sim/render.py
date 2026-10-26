@@ -84,6 +84,24 @@ def _add_wing_halo(image, x0, y0, half, scaled_flux, wing, floor_e):
         image[cy_lo:cy_hi, bx_lo:bx_hi] += halo
 
 
+def unit_stamp(psf_os, sx, sy, oversample, wing=None, blend=None):
+    """Detector-resolution PSF stamp shifted by (sx, sy) fine samples, unit flux scale.
+
+    The oversampled PSF is rolled by (sy, sx) fine samples and binned to detector
+    pixels. With a `wing` model the outer annulus is crossfaded into the smooth
+    wing and the scattered-light halo is added (see wing_blend); the flux
+    normalisation 1 / wing.flux_norm(half) is left to the caller. Shared by
+    add_star (stars) and render_subgrid (images), so both draw the same stamp.
+    """
+    stamp = bin_oversampled(np.roll(psf_os, (sy, sx), axis=(0, 1)), oversample)
+    if wing is None:
+        return stamp
+    if blend is None:
+        blend = wing_blend(psf_os.shape[0] // oversample, wing)
+    return (blend.core_scale * (stamp * blend.w + blend.model * (1.0 - blend.w))
+            + blend.halo)
+
+
 def add_star(image, psf_os, x, y, flux_e, oversample, wing=None, floor_e=None,
              blend=None):
     """Add one star at float pixel (x, y), sub-pixel placed, edge-clipped.
@@ -109,18 +127,13 @@ def add_star(image, psf_os, x, y, flux_e, oversample, wing=None, floor_e=None,
         return
     sx = int(round((x - x0) * oversample))
     sy = int(round((y - y0) * oversample))
-    stamp = bin_oversampled(np.roll(psf_os, (sy, sx), axis=(0, 1)), oversample)
     if wing is not None:
         if blend is None:
             blend = wing_blend(n_stamp, wing)
         flux_e = flux_e / wing.flux_norm(float(half))
-        stamp = flux_e * (
-            blend.core_scale
-            * (stamp * blend.w + blend.model * (1.0 - blend.w))
-            + blend.halo
-        )
+        stamp = flux_e * unit_stamp(psf_os, sx, sy, oversample, wing, blend)
     else:
-        stamp = stamp * flux_e
+        stamp = unit_stamp(psf_os, sx, sy, oversample) * flux_e
 
     y_lo, y_hi = y0 - half, y0 + half + 1
     x_lo, x_hi = x0 - half, x0 + half + 1
@@ -132,6 +145,45 @@ def add_star(image, psf_os, x, y, flux_e, oversample, wing=None, floor_e=None,
 
     if wing is not None and floor_e is not None:
         _add_wing_halo(image, x0, y0, half, flux_e, wing, floor_e)
+
+
+def render_subgrid(sub, psf_k, wing=None, blend=None):
+    """PSF-convolve light on a detector-aligned sub-grid and bin it to detector pixels.
+
+    `sub` is a resample.Subgrid (data per sub-pixel, k sub-pixels per detector
+    pixel, origin y0, x0); `psf_k` is the PSF oversampled by the same k. Polyphase
+    rendering: the sub-pixels at offset (p, q) inside their detector pixel all use
+    the same shifted stamp (unit_stamp), so data[p::k, q::k] is convolved with it
+    and the k*k results are summed. Identical to one add_star(floor_e=None) per
+    sub-pixel, at detector resolution only. No halo is drawn beyond the stamp
+    (as in render_extended). Returns a Subgrid with k = 1 whose origin is shifted
+    by half a stamp (the convolution's border); total_in is passed through.
+    """
+    from scipy.signal import oaconvolve
+
+    from .resample import Subgrid
+
+    k = int(sub.k)
+    if psf_k.shape[0] % k or psf_k.shape[0] != psf_k.shape[1]:
+        raise ValueError(f"PSF shape {psf_k.shape} is not square with a multiple of "
+                         f"k = {k} samples per side")
+    n_stamp = psf_k.shape[0] // k
+    if n_stamp % 2 == 0:
+        raise ValueError(f"PSF stamp must be odd, got {n_stamp} px")
+    half = n_stamp // 2
+    if wing is not None and blend is None:
+        blend = wing_blend(n_stamp, wing)
+    shift = (k - 1) // 2
+    out = None
+    for p in range(k):
+        for q in range(k):
+            stamp = unit_stamp(psf_k, q - shift, p - shift, k, wing, blend)
+            part = oaconvolve(np.asarray(sub.data[p::k, q::k], dtype=float), stamp,
+                              mode="full")
+            out = part if out is None else out + part
+    if wing is not None:
+        out = out / wing.flux_norm(float(half))
+    return Subgrid(out, sub.y0 - half, sub.x0 - half, 1, sub.total_in)
 
 
 def render_scene(shape, xs, ys, fluxes_e, psf_os, oversample, wing=None,
