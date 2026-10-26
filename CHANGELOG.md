@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.1 (2026-10-21)
+## 0.1.1 (2026-10-25)
 
 - `wcc_sim.GalSimComponent`: an extended source described by any
   `galsim.GSObject` (bulge+disk sums, shears, RealGalaxy), normalized by
@@ -44,6 +44,9 @@
   `test` extra now includes reproject.
 - Tutorial notebook `12_image_sources`: a synthetic star + inclined ring +
   planet image through each step, with flux-conservation checks.
+- `psf.centroid_offset` no longer uses a matrix product, which on macOS
+  (Accelerate BLAS) emitted spurious RuntimeWarnings; tutorials 01/02/03/05/08/09
+  re-executed without them (#54).
 
 ## 0.1.0 (2026-10-12)
 
