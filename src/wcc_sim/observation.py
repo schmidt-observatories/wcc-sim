@@ -24,9 +24,16 @@ from .fluxrate import band_fluxes, flux_to_rate
 from .pipeline import SimulatedField, _core_wing
 from .psf import DEFAULT_STAMP, render_oversampled_psf
 from .render import add_noise_and_digitize, bin_oversampled, render_subgrid, wing_blend
+from .resample import choose_subgrid
 from .scatter import halo_for_sensorfilter
 from .starflux import sky_and_dark_rates
 from .wings import CombinedWing, fit_wing_model
+
+# Default limit for estimated peak memory usage when resampling [in GB = 1e9 bytes]
+DEFAULT_MAX_MEMORY_GB = 4.0
+
+# Estimated number of float64 arrays held per sub-pixel and per input pixel for resample_to_subgrid 
+_PEAK_FLOATS_PER_PIXEL = 14
 
 #: CAT columns of simulate_field; image fields write them with zero rows.
 _CAT_COLUMNS = (("source_id", np.int64), ("ra", float), ("dec", float),
@@ -48,7 +55,8 @@ class WCCObservation:
 
     def __init__(self, components, frame, *, focus=None, jitter_sigma_mas=None,
                  wavelength_nm=None, stamp_npix=None, wings=True, scatter=True,
-                 scatter_fraction=None, gain_mode=None, subgrid=None):
+                 scatter_fraction=None, gain_mode=None, subgrid=None,
+                 max_memory_gb=DEFAULT_MAX_MEMORY_GB):
         if not isinstance(components, (list, tuple)):
             components = [components]
         self.components = list(components)
@@ -60,6 +68,7 @@ class WCCObservation:
         self.scatter_fraction = scatter_fraction
         self.gain_mode = gain_mode
         self.subgrid = subgrid
+        self.max_memory_gb = max_memory_gb
         self.sim = make_base_simulation(frame.sensorfilter, gain_mode=gain_mode)
         self.geom = get_geometry(frame.sensorfilter, sim=self.sim)
         self.focus = self.geom.default_focus if focus is None else int(focus)
@@ -99,9 +108,63 @@ class WCCObservation:
 
     # -- rendering ---------------------------------------------------------------- #
 
+    def memory_estimate(self):
+        """Estimated peak memory [bytes] for image resampling
+
+        Estimate per image component: 
+           N_pixel (in memory) =
+             PEAK_FLOATS_PER_PIXEL 
+             * ((y1 - y0) * (x1 - x0) # footprint
+             * k**2 # k = sub-grid factor (see SkyImageComponent.rate_map)
+
+        Total memory [bytes] = sum(N_pixel * 8)  
+        
+        Returns
+        -------
+        (total, rows) with one dict (label, box, k, bytes) per image component.
+        """
+        f = self.frame
+        rows = []
+        for comp in self.components:
+            if not hasattr(comp, "image"):
+                continue
+            box = comp.footprint(f.wcs, f.shape)
+            k = choose_subgrid(comp.image.pixel_scale_mas, f.plate_scale_mas,
+                               override=self.subgrid)
+            n_bytes = 0
+            if box is not None:
+                y0, y1, x0, x1 = box
+                n_sub = (y1 - y0) * (x1 - x0) * k * k
+                n_in = int(np.prod(comp.image.shape))
+                n_bytes = 8 * _PEAK_FLOATS_PER_PIXEL * (n_sub + n_in)
+            rows.append({"label": comp.label or comp.kind, "box": box, "k": k, "bytes": n_bytes})
+        return sum(r["bytes"] for r in rows), rows
+
+    def _check_memory(self):
+        """Raise MemoryError if memory_estimate() exceeds max_memory_gb (None: no check)."""
+        if self.max_memory_gb is None:
+            return
+        total, rows = self.memory_estimate()
+        limit = float(self.max_memory_gb) * 1e9
+        if total <= limit:
+            return
+        parts = []
+        for r in rows:
+            if r["box"] is None:
+                continue
+            y0, y1, x0, x1 = r["box"]
+            parts.append(f"{r['label']}: footprint {y1 - y0} x {x1 - x0} px, k = {r['k']}, "
+                         f"{r['bytes'] / 1e9:.2f} GB")
+        raise MemoryError(
+            f"resampling needs an estimated {total / 1e9:.2f} GB, above "
+            f"max_memory_gb = {self.max_memory_gb:g} ({'; '.join(parts)}). Use a smaller "
+            "subgrid or input image, or raise "
+            "limit with \'max_memory_gb\'.")
+
     def _rendered(self):
         """Per component (rate_map Subgrid, rendered Subgrid), or (None, None); cached."""
         if self._subs is None:
+            self._check_memory()
             f = self.frame
             self._subs = []
             for comp in self.components:
