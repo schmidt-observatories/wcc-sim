@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- Memory guard for image simulations (part of #57): before resampling,
+  `WCCObservation.memory_estimate()` estimates the peak conservatively from the
+  footprint, the sub-grid factor k and the input size (14 float64 per sub-pixel
+  and per input pixel, from tracemalloc measurements of `reproject_exact`).
+  Above `max_memory_gb` (default 4 GB, on `WCCObservation` and `simulate_image`)
+  a `MemoryError` names the footprint, k and the remedies; `None` switches the
+  check off.
+
 ## 0.1.1 (2026-10-25)
 
 - `wcc_sim.GalSimComponent`: an extended source described by any

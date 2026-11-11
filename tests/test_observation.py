@@ -168,3 +168,28 @@ def test_band_fluxes_in_params():
     expected = band_fluxes(field.params["image_total_e_s"], SF)
     assert field.params["flux_jy"] == pytest.approx(expected["f_nu_jy"])
     assert field.params["flux_band"] == pytest.approx(expected["f_band"])
+
+
+def test_memory_estimate_formula():
+    from wcc_sim.observation import _PEAK_FLOATS_PER_PIXEL
+
+    comp, det = component(), frame()
+    obs = WCCObservation(comp, det, focus=0, wings=False, subgrid=3)
+    total, rows = obs.memory_estimate()
+    y0, y1, x0, x1 = comp.footprint(det.wcs, det.shape)
+    expected = 8 * _PEAK_FLOATS_PER_PIXEL * ((y1 - y0) * (x1 - x0) * 9 + 60 * 60)
+    assert total == expected and rows[0]["k"] == 3 and rows[0]["bytes"] == expected
+    off = WCCObservation(component(ra=RA0 + 1.0), det, focus=0, wings=False)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        assert off.memory_estimate()[0] == 0          # off-frame: nothing to resample
+
+
+def test_memory_limit_raises_before_resampling():
+    obs = WCCObservation(component(), frame(), focus=0, wings=False, max_memory_gb=1e-6)
+    with pytest.raises(MemoryError, match=r"k = 5.*max_memory_gb"):
+        obs.rate_image()
+    assert obs._subs is None                          # nothing resampled or cached
+    ok = WCCObservation(component(), frame(), focus=0, wings=False, max_memory_gb=None)
+    assert ok.rate_image().sum() > 0
+    assert WCCObservation(component(), frame(), focus=0, wings=False).rate_image().sum() > 0

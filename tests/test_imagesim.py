@@ -50,3 +50,11 @@ def test_user_pointing_and_offset(tmp_path):
 def test_ra_without_dec_rejected(tmp_path):
     with pytest.raises(ValueError, match="both ra and dec"):
         simulate_image(write_image(tmp_path / "in.fits"), ra=RA0)
+
+
+def test_memory_limit_option(tmp_path):
+    path = write_image(tmp_path / "in.fits")
+    kw = dict(focus=0, shape=(161, 161), exptime=10.0, seed=1, wings=False)
+    with pytest.raises(MemoryError, match="max_memory_gb"):
+        simulate_image(path, max_memory_gb=1e-6, **kw)
+    assert simulate_image(path, max_memory_gb=None, **kw).params["image_total_e_s"] > 0
